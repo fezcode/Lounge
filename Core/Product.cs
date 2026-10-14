@@ -5,5 +5,5 @@ namespace Lounge.Core;
 public static class Product
 {
     public const string Name = "Lounge";
-    public const string Version = "1.0.1";
+    public const string Version = "1.0.2";
 }

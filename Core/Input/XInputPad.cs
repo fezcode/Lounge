@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 
 namespace Lounge.Core.Input;
 
@@ -13,7 +13,8 @@ public sealed class XInputPad
     private const long ReprobeMs = 1000;
 
     private readonly bool[] _connected = new bool[Slots];
-    private long _lastProbe = long.MinValue;
+    // Not long.MinValue: now - MinValue overflows negative and empty slots would never be probed.
+    private long? _lastProbe;
     private bool _unavailable;
     private bool _exUnavailable;
 
@@ -25,7 +26,7 @@ public sealed class XInputPad
     public PadState Read(long nowMs)
     {
         if (_unavailable) return PadState.Disconnected;
-        var probe = nowMs - _lastProbe >= ReprobeMs;
+        var probe = ShouldProbe(_lastProbe, nowMs);
         if (probe) _lastProbe = nowMs;
         var states = new List<PadState>(Slots);
         try
@@ -58,6 +59,9 @@ public sealed class XInputPad
         }
         return states.Count == 0 ? PadState.Disconnected : PadState.Merge(states);
     }
+
+    /// <summary>Empty slots are asked about on the first read and then once a second.</summary>
+    public static bool ShouldProbe(long? lastProbe, long nowMs) => lastProbe is not { } last || nowMs - last >= ReprobeMs;
 
     private static float Norm(short v) => Math.Clamp(v / 32767f, -1f, 1f);
 

@@ -30,6 +30,15 @@ public class RouterTests
     }
 
     [Fact]
+    public void Empty_controller_slots_are_probed_first_and_then_every_second()
+    {
+        Assert.True(XInputPad.ShouldProbe(null, 0));            // the very first read
+        Assert.True(XInputPad.ShouldProbe(null, long.MaxValue));
+        Assert.False(XInputPad.ShouldProbe(5_000, 5_500));
+        Assert.True(XInputPad.ShouldProbe(5_000, 6_000));
+    }
+
+    [Fact]
     public void Plain_press_fires_immediately()
     {
         var r = new Rig();
