@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Lounge.Core.Launch;
@@ -70,8 +70,14 @@ public sealed class TileStore
     public static TileStore InMemory() => new(Path.Combine(Path.GetTempPath(), "lounge-tiles-" + Guid.NewGuid().ToString("N") + ".json")) { Persist = false };
 
     public IReadOnlyList<Tile> All => _tiles;
-    public IEnumerable<Tile> Web => _tiles.Where(t => t.IsWeb && !t.Hidden);
-    public IEnumerable<Tile> Apps => _tiles.Where(t => !t.IsWeb && !t.Hidden);
+    /// <summary>Pinned tiles come first, then the rest in the user's order.</summary>
+    public IEnumerable<Tile> Web => _tiles.Where(t => t.IsWeb && !t.Hidden).OrderByDescending(t => t.Pinned);
+    public IEnumerable<Tile> Apps => _tiles.Where(t => !t.IsWeb && !t.Hidden).OrderByDescending(t => t.Pinned);
+
+    public void SetPinned(string id, bool pinned)
+    {
+        if (Find(id) is { } t) { t.Pinned = pinned; Save(); }
+    }
     public IEnumerable<Tile> HiddenTiles => _tiles.Where(t => t.Hidden);
 
     private List<Tile> Load()
@@ -122,7 +128,7 @@ public sealed class TileStore
     {
         var tile = Find(id);
         if (tile is null) return;
-        var group = _tiles.Where(t => t.IsWeb == tile.IsWeb && !t.Hidden).ToList();
+        var group = _tiles.Where(t => t.IsWeb == tile.IsWeb && !t.Hidden && t.Pinned == tile.Pinned).ToList();
         var gi = group.IndexOf(tile);
         var target = gi + direction;
         if (target < 0 || target >= group.Count) return;

@@ -1,4 +1,4 @@
-namespace Lounge.Core.Settings;
+﻿namespace Lounge.Core.Settings;
 
 /// <summary>Setting keys, so code never spells one twice. JSON keys are dotted; ini keys
 /// use tivi's exact names.</summary>
@@ -14,7 +14,8 @@ public static class K
     // Appearance
     public const string Theme = "appearance.theme";
     public const string Accent = "appearance.accent";
-    public const string Wallpaper = "appearance.wallpaper";
+    /// <summary>Each theme keeps its own wallpaper.</summary>
+    public static string WallpaperFor(string theme) => "appearance.wallpaper." + theme;
     public const string Blur = "appearance.blur";
     public const string ReduceEffects = "appearance.reduceEffects";
     public const string AnimationSpeed = "appearance.animationSpeed";
@@ -207,7 +208,8 @@ public static class SettingsSchema
             // ---- Appearance
             Choice(K.Theme, "Appearance", "Theme", "aurora", Themes, "Each theme has its own home layout, colours, sounds and ambient music."),
             Choice(K.Accent, "Appearance", "Accent colour", "", Accents),
-            new(K.Wallpaper, "Appearance", "Wallpaper", SettingKind.Path, "") { Help = "An image picked in Files. Default uses the theme's own backdrop." },
+            .. Themes.Select(t => new SettingDescriptor(K.WallpaperFor(t.Value), "Appearance", $"Wallpaper: {t.Label}", SettingKind.Path, "")
+                { Help = $"An image picked in Files for the {t.Label} theme. Default uses the theme's own backdrop." }),
             Toggle(K.Blur, "Appearance", "Frosted glass", true, "Blurs the backdrop behind panels."),
             Toggle(K.ReduceEffects, "Appearance", "Reduce effects", false, "Simpler motion and no blur, for slower graphics cards."),
             Num(K.AnimationSpeed, "Appearance", "Animation speed", 1.0, 0.5, 2.0, 0.25, "x"),

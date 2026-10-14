@@ -1,4 +1,4 @@
-using Lounge.Core.Audio;
+﻿using Lounge.Core.Audio;
 using Lounge.Core.Files;
 using Lounge.Core.Launch;
 using Lounge.Core.Library;
@@ -256,6 +256,18 @@ public class LaunchTests
         Assert.Equal(first, again.Apps.ElementAt(1).Id);
         store.SetHidden(first, true);
         Assert.DoesNotContain(new TileStore(dir.File("tiles.json")).Apps, t => t.Id == first);
+    }
+
+    [Fact]
+    public void Pinned_tiles_come_first_and_move_among_themselves()
+    {
+        using var dir = new TempDir();
+        var store = new TileStore(dir.File("tiles.json"));
+        var last = store.Web.Last();
+        store.SetPinned(last.Id, true);
+        Assert.Equal(last.Id, store.Web.First().Id);
+        store.Move(last.Id, +1);   // nothing else is pinned: it stays first
+        Assert.Equal(last.Id, new TileStore(dir.File("tiles.json")).Web.First().Id);
     }
 
     [Fact]

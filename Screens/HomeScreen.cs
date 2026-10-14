@@ -7,6 +7,7 @@ using Avalonia.Threading;
 using Lounge.Controls;
 using Lounge.Core.Focus;
 using Lounge.Core.Input;
+using Lounge.Core.Launch;
 using Lounge.Core.Themes;
 using Lounge.Shell;
 
@@ -491,12 +492,51 @@ public sealed class HomeScreen : Screen
 
     // ------------------------------------------------------------------ input
 
+    private Tile? _moving;
+
+    /// <summary>Picks a tile up: the D-pad carries it along its row, A or B puts it down.</summary>
+    public void StartMove(Tile tile)
+    {
+        _moving = tile;
+        L.Rumble(0.3f, 60);
+        L.Window.Toast($"Moving {tile.Name}. Use the D-pad, then A to put it down.", "move", 3);
+    }
+
+    private bool HandleMove(ActionEvent e)
+    {
+        if (_moving is not { } t || e.Phase is ActionPhase.Released or ActionPhase.Changed) return _moving is not null;
+        switch (e.Action)
+        {
+            case Act.Left or Act.Up:
+                L.Tiles.Move(t.Id, -1);
+                Rebuild();
+                L.Play(Lounge.Core.Audio.UiSound.Move);
+                return true;
+            case Act.Right or Act.Down:
+                L.Tiles.Move(t.Id, +1);
+                Rebuild();
+                L.Play(Lounge.Core.Audio.UiSound.Move);
+                return true;
+            case Act.Accept or Act.Back or Act.MoveMode:
+                _moving = null;
+                L.Play(Lounge.Core.Audio.UiSound.Select);
+                L.Rumble(0.2f, 40);
+                return true;
+        }
+        return true;
+    }
+
     public override bool Handle(ActionEvent e)
     {
+        if (_moving is not null) return HandleMove(e);
         if (e.Phase == ActionPhase.Pressed)
         {
             switch (e.Action)
             {
+                case Act.MoveMode:
+                    if (Focused is { } mf && _entries.TryGetValue(mf, out var me) && me.Tile is { } mt) StartMove(mt);
+                    else L.Play(Lounge.Core.Audio.UiSound.Error);
+                    return true;
                 case Act.ContextMenu:
                     if (Focused is { } ff && _entries.TryGetValue(ff, out var en) && en.Options is { } opts) opts();
                     else HomeMenu();

@@ -254,7 +254,7 @@ public sealed class ImageViewerScreen : Screen
                 var path = _images[_index];
                 L.Window.Menu(Path.GetFileName(path),
                 [
-                    new MenuEntry("Use as wallpaper", "image", () => { L.Settings.Set(K.Wallpaper, path); L.Window.Toast("Wallpaper set.", "image"); }),
+                    new MenuEntry("Use as wallpaper", "image", () => { L.Settings.Set(K.WallpaperFor(T.Def.Id), path); L.Window.Toast($"Wallpaper set for {T.Def.Name}.", "image"); }),
                     new MenuEntry("Show in Files", "folder", () => L.Window.Push(new FilesScreen(Path.GetDirectoryName(path)))),
                 ]);
                 return true;

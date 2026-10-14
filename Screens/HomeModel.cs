@@ -146,6 +146,8 @@ public static class HomeModel
         };
         if (t.IsWeb) items.Add(new MenuEntry("Open in full browser", "external", () => Launcher.Launch(t.Clone().Also(c => c.OpenExternally = true))));
         items.Add(new MenuEntry("Edit", "pencil", () => L.Window.Push(new TileEditorScreen(t))));
+        items.Add(new MenuEntry(t.Pinned ? "Unpin" : "Pin to the front", "star", () => { L.Tiles.SetPinned(t.Id, !t.Pinned); L.Window.Find<HomeScreen>()?.Rebuild(); }));
+        items.Add(new MenuEntry("Move (or hold A)", "move", () => L.Window.Find<HomeScreen>()?.StartMove(t)));
         items.Add(new MenuEntry("Move earlier", "back", () => { L.Tiles.Move(t.Id, -1); L.Window.Find<HomeScreen>()?.Rebuild(); }));
         items.Add(new MenuEntry("Move later", "chevron", () => { L.Tiles.Move(t.Id, +1); L.Window.Find<HomeScreen>()?.Rebuild(); }));
         items.Add(new MenuEntry("Hide from Home", "eye-off", () => { L.Tiles.SetHidden(t.Id, true); L.Window.Find<HomeScreen>()?.Rebuild(); }));

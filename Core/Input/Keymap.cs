@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Nodes;
 
 namespace Lounge.Core.Input;
@@ -172,6 +172,9 @@ public sealed class Keymap
         P("Global", PadButton.RB, Act.VolumeUp); P("Global", PadButton.LB, Act.VolumeDown);
         P("Global", PadButton.LT, Act.PrevSection); P("Global", PadButton.RT, Act.NextSection);
         H("Global", PadButton.View | PadButton.B, Act.CursorToggle);
+
+        // On menus, holding A picks a tile up to move it (so A selects on release there).
+        H("Shell", PadButton.A, Act.MoveMode);
 
         P("Player", PadButton.A, Act.PlayPause);
         P("Player", PadButton.B, Act.Stop);

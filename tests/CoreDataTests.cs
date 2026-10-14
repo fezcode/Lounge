@@ -1,4 +1,4 @@
-using Lounge.Core.Input;
+﻿using Lounge.Core.Input;
 using Lounge.Core.Media;
 using Lounge.Core.Settings;
 using Xunit;
@@ -130,6 +130,8 @@ public class SettingsTests
             }
             if (d.Kind == SettingKind.Choice) Assert.Contains(d.Choices, c => c.Value == (string)d.Default!);
         }
+        foreach (var theme in SettingsSchema.Themes)
+            Assert.True(SettingsSchema.TryGet(K.WallpaperFor(theme.Value), out _), $"no wallpaper setting for {theme.Value}");
         Assert.Equal(SettingsSchema.All.Count, SettingsSchema.All.Select(d => d.Key).Distinct().Count());
         foreach (var section in SettingsSchema.Sections)
             Assert.Contains(SettingsSchema.All, d => d.Section == section);

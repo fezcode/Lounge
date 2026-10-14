@@ -609,8 +609,8 @@ public sealed class MainWindow : Window
             case K.UiScale:
                 Relayout();
                 break;
-            case K.Wallpaper:
-                _backdrop.SetWallpaper(L.Settings.String(K.Wallpaper));
+            case var w when w == K.WallpaperFor(T.Def.Id):
+                _backdrop.SetWallpaper(L.Settings.String(w));
                 break;
             case K.ReduceEffects or K.AnimationSpeed:
                 App.ApplyMotion();
@@ -647,6 +647,7 @@ public sealed class MainWindow : Window
     {
         T.Apply(Lounge.Core.Themes.Themes.Get(L.Settings.String(K.Theme)), L.Settings.String(K.Accent));
         _backdrop.Restyle();
+        _backdrop.SetWallpaper(L.Settings.String(K.WallpaperFor(T.Def.Id)));
         App.ConfigureSound();
         if (!rebuild) return;
         var settingsOpen = _overlayStack.OfType<SettingsPanel>().FirstOrDefault();

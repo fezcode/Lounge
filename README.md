@@ -35,7 +35,7 @@ Lounge?"*. Press Ⓐ for yes, Ⓑ for not now.
 
 | Button | Everywhere | While watching |
 |---|---|---|
-| Ⓐ | Select | Play / pause |
+| Ⓐ | Select (hold on a home tile to pick it up and move it) | Play / pause |
 | Ⓑ | Back | Stop |
 | Ⓧ / Ⓨ | Options on the focused item / search | Info / audio, subtitles and picture |
 | D-pad, left stick | Move | Skip ±10 s (left/right), ±60 s (up/down) |
@@ -57,7 +57,9 @@ button by pressing the new one. Holds and combinations work too.
 - **Five themes, five homes.** Aurora (Apple TV-like hero and rows), Living Room
   (a smart-TV launcher ribbon), Kodi Classic (the XBMC side menu over fanart),
   Console One (a PS5-style icon row) and Series (an Xbox-style tile grid). Each
-  has its own colours, motion, interface sounds and original ambient music.
+  has its own colours, motion, interface sounds, original ambient music and its
+  own wallpaper (any picture from Files). Tiles can be pinned to the front,
+  moved and hidden.
 - **The player.** FFmpeg 8 with D3D11VA hardware decoding, a YUV→RGB shader
   (BT.709/601, picture adjustments), audio as the master clock, exact seeks,
   pitch-correct speed, libass subtitles with automatic sidecar pickup

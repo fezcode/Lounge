@@ -456,7 +456,7 @@ public sealed class FilesScreen : Screen
             }, name));
         }
         if (e is { Kind: MediaKind.Image })
-            items.Add(new MenuEntry("Use as wallpaper", "image", () => { L.Settings.Set(K.Wallpaper, e.Path); L.Window.Toast("Wallpaper set.", "image"); }));
+            items.Add(new MenuEntry("Use as wallpaper", "image", () => { L.Settings.Set(K.WallpaperFor(T.Def.Id), e.Path); L.Window.Toast($"Wallpaper set for {T.Def.Name}.", "image"); }));
         if (e is { Kind: MediaKind.Program }) items.Add(new MenuEntry("Add to Home", "plus", () => AddToHome(e)));
         if (e is not null) items.Add(new MenuEntry("Select", "check", () => ToggleSelect(e), Checked: _selected.Contains(e.Path)));
         if (_entries.Count > 0)

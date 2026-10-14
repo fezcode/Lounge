@@ -1,4 +1,4 @@
-using Lounge.Core.Input;
+﻿using Lounge.Core.Input;
 using Xunit;
 
 namespace Lounge.Tests;
@@ -33,8 +33,31 @@ public class RouterTests
     public void Plain_press_fires_immediately()
     {
         var r = new Rig();
+        r.Pad(PadButton.DPadUp);
+        Assert.Equal([Act.Up], r.Names);
+    }
+
+    [Fact]
+    public void On_menus_A_selects_on_release_and_holding_it_moves_a_tile()
+    {
+        var r = new Rig();
         r.Pad(PadButton.A);
+        Assert.Empty(r.Events);
+        r.Pad(PadButton.None);
         Assert.Equal([Act.Accept], r.Names);
+        r.Events.Clear();
+        r.Pad(PadButton.A);
+        r.Advance(700, PadButton.A);
+        r.Pad(PadButton.None);
+        Assert.Equal([Act.MoveMode], r.Names);
+    }
+
+    [Fact]
+    public void While_watching_A_still_pauses_at_once()
+    {
+        var r = new Rig("Player");
+        r.Pad(PadButton.A);
+        Assert.Equal([Act.PlayPause], r.Names);
     }
 
     [Fact]
@@ -110,7 +133,7 @@ public class RouterTests
     [Fact]
     public void Accept_does_not_repeat()
     {
-        var r = new Rig();
+        var r = new Rig("Files");
         r.Pad(PadButton.A);
         r.Advance(2000, PadButton.A);
         Assert.Single(r.Events);
@@ -155,8 +178,8 @@ public class RouterTests
     [Fact]
     public void Button_held_across_a_context_switch_does_not_fire_in_the_new_context()
     {
-        var r = new Rig();
-        r.Pad(PadButton.A);                     // Accept in Shell opens the player...
+        var r = new Rig("Files");
+        r.Pad(PadButton.A);                     // Accept in Files opens the player...
         r.Router.Context = "Player";
         r.Advance(200, PadButton.A);
         r.Pad(PadButton.None);                  // ...and releasing A must not pause it

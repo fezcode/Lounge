@@ -1,4 +1,4 @@
-namespace Lounge.Core.Input;
+﻿namespace Lounge.Core.Input;
 
 /// <summary>Everything the controller can ask Lounge to do. Modules react to these and
 /// never to buttons, which is what makes every button remappable.</summary>
@@ -17,6 +17,7 @@ public static class Act
     public const string PageDown = "Nav.PageDown";
     public const string PrevSection = "Nav.PrevSection";
     public const string NextSection = "Nav.NextSection";
+    public const string MoveMode = "Nav.MoveMode";
 
     // App
     public const string Home = "App.Home";
@@ -71,7 +72,7 @@ public static class Act
         new(Up, "Move up", true), new(Down, "Move down", true), new(Left, "Move left", true), new(Right, "Move right", true),
         new(Accept, "Select"), new(Back, "Back"), new(Secondary, "Secondary action"), new(Tertiary, "Third action"),
         new(PageUp, "Page up", true), new(PageDown, "Page down", true),
-        new(PrevSection, "Previous section"), new(NextSection, "Next section"),
+        new(PrevSection, "Previous section"), new(NextSection, "Next section"), new(MoveMode, "Move the focused tile"),
         new(Home, "Home"), new(Settings, "Settings"), new(ContextMenu, "Options menu"), new(Return, "Return to Lounge"),
         new(VolumeUp, "Volume up", true), new(VolumeDown, "Volume down", true), new(Mute, "Mute"),
         new(PlayPause, "Play / pause"), new(Stop, "Stop"),

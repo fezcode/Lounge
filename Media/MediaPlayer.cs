@@ -254,7 +254,8 @@ public sealed unsafe class MediaPlayer : IDisposable
         var subs = Tracks.Where(t => t.Kind == TrackKind.Subtitle).ToList();
         var pick = subs.FirstOrDefault(t => t.MatchesLanguage(options.SubLanguage) && !t.IsForced)
                    ?? subs.FirstOrDefault(t => t.IsDefault)
-                   ?? subs.FirstOrDefault(t => t.IsForced);
+                   ?? subs.FirstOrDefault(t => !t.IsForced)
+                   ?? subs.FirstOrDefault();
         if (pick is not null) SelectSubtitle(pick.StreamIndex);
     }
 

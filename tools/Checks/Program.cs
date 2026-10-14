@@ -69,6 +69,7 @@ internal static class Program
             Check("A file is renamed with the controller keyboard", RenameFile);
             Check("New folder, copy and paste from the options menu", NewFolderCopyPaste);
             Check("A button is remapped on the Remote screen", RemapButton);
+            Check("Holding A picks a home tile up and the D-pad moves it", MoveTile);
             Check("Every theme renders its own home", ThemesDiffer);
             Check("The keyboard fits on screen in every layer", KeyboardFits);
             Check("While an app runs, only the return chord is heard", DormantChord);
@@ -291,6 +292,27 @@ internal static class Program
         Assert(accept == Act.Accept, $"X does {accept ?? "nothing"} instead of Select");
         Assert(secondary == Act.Secondary, $"A does {secondary ?? "nothing"} instead of the swapped action");
         L.Keymap.ResetAll();
+    }
+
+    private static void MoveTile()
+    {
+        _w.GoHome();
+        Pump();
+        // Walk down the rows until a tile (Cogas, Steam...) has focus.
+        for (int i = 0; i < 8 && (_w.Top?.Focused?.Tag as HomeEntry)?.Tile is null; i++) Press(PadButton.DPadDown);
+        var tile = (_w.Top?.Focused?.Tag as HomeEntry)?.Tile;
+        Assert(tile is not null, "no tile row on Home");
+        var before = L.Tiles.Apps.Select(t => t.Id).ToList();
+        Hold(PadButton.A, L.Settings.Int(K.HoldMs) + 100);
+        Press(PadButton.DPadRight);
+        Press(PadButton.A);
+        Pump();
+        var after = L.Tiles.Apps.Select(t => t.Id).ToList();
+        Assert(after.IndexOf(tile!.Id) == before.IndexOf(tile.Id) + 1, $"{tile.Name} did not move right ({string.Join(",", before)} -> {string.Join(",", after)})");
+        Assert(_w.Top?.Focused?.Tag is HomeEntry { Tile: { } f } && f.Id == tile.Id, "focus did not follow the moved tile");
+        Press(PadButton.DPadDown);   // A put it down: the D-pad moves focus again
+        Assert((_w.Top?.Focused?.Tag as HomeEntry)?.Tile?.Id != tile.Id || L.Tiles.Apps.Select(t => t.Id).SequenceEqual(after), "still moving after A");
+        L.Tiles.ResetDefaults();
     }
 
     private static void ThemesDiffer()
