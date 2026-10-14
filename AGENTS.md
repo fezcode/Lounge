@@ -45,6 +45,12 @@ use it is fine, driving their desktop is not.
    `--windowed --no-activate --new-instance --play <clip>`; it plays, reads the
    GL framebuffer back to `gl-frame.png`, writes `player.json` and exits without
    taking focus. Look at the PNG: the test pattern's colour bars must be right.
+   With --web <url> instead of --play it writes web.json (WebView2 loaded,
+   Gamepad API, DRM systems via WebScreen.EvalPromise; ExecuteScriptAsync`n   alone returns a Promise as {}).
+
+The tests also compile tivi's own watch.c/iconfig.c (from ../tivi/src, with
+MSYS2 gcc) into a harness and check that tivi and Lounge read each other's
+history.ini and config.ini (APPDATA is pointed at a temp folder).
 
 Headless traps that have already produced wrong results here:
 

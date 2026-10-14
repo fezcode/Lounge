@@ -90,7 +90,7 @@ internal sealed class Agent : ApplicationContext
         if (_prompt is not null) return;
         var state = _pad.Read(_clock.ElapsedMilliseconds);
         var count = state.Connected ? Math.Max(1, _pad.ConnectedCount) : 0;
-        var connectedNow = count > _lastCount;
+        var connectedNow = Lounge.Core.Launch.AgentPolicy.ControllerArrived(_lastCount, count);
         _lastCount = count;
         if (connectedNow) Ask(force: false);
     }
@@ -101,9 +101,9 @@ internal sealed class Agent : ApplicationContext
         if (!force)
         {
             if (!s.Bool(K.AgentEnabled)) { ExitThread(); return; }
-            if (DateTime.Now < _quietUntil) return;
-            if (Process.GetProcessesByName("Lounge").Length > 0) return;
-            if (s.String(K.AgentWhen) == "notFullscreen" && Win32.FullscreenAppActive()) return;
+            if (!Lounge.Core.Launch.AgentPolicy.ShouldAsk(true, DateTime.Now, _quietUntil,
+                    Process.GetProcessesByName("Lounge").Length > 0, s.String(K.AgentWhen), Win32.FullscreenAppActive()))
+                return;
         }
         _prompt = new PromptForm(_pad, s.Int(K.AgentTimeoutSeconds));
         if (s.Bool(K.AgentVibrate)) _ = _pad.Pulse(0.45f, 140);

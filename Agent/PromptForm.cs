@@ -1,4 +1,4 @@
-using System.Drawing;
+﻿using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Text;
 using System.Runtime.InteropServices;
@@ -15,8 +15,7 @@ internal sealed class PromptForm : Form
     private readonly System.Windows.Forms.Timer _poll = new() { Interval = 16 };
     private readonly DateTime _until;
     private readonly double _seconds;
-    private PadButton _prev;
-    private bool _armed;
+    private readonly Lounge.Core.Launch.PromptAnswer _answer;
     private double _appear;
 
     /// <summary>true = yes, false = no, null = timed out.</summary>
@@ -41,7 +40,7 @@ internal sealed class PromptForm : Form
         _poll.Tick += (_, _) => Tick();
         _poll.Start();
         // Buttons already down when the prompt appears (the press that woke the pad) don't count.
-        _prev = _pad.Read(Environment.TickCount64).Buttons;
+        _answer = new Lounge.Core.Launch.PromptAnswer(_pad.Read(Environment.TickCount64).Buttons);
     }
 
     protected override bool ShowWithoutActivation => true;
@@ -69,12 +68,7 @@ internal sealed class PromptForm : Form
     {
         _appear = Math.Min(1, _appear + 0.08);
         Opacity = 0.97 * (1 - Math.Pow(1 - _appear, 3));
-        var state = _pad.Read(Environment.TickCount64);
-        var pressed = state.Buttons & ~_prev;
-        if (state.Buttons == PadButton.None) _armed = true;
-        _prev = state.Buttons;
-        if (_armed && (pressed & PadButton.A) != 0) { Answer = true; Close(); return; }
-        if (_armed && (pressed & PadButton.B) != 0) { Answer = false; Close(); return; }
+        if (_answer.Update(_pad.Read(Environment.TickCount64).Buttons) is { } decided) { Answer = decided; Close(); return; }
         if (DateTime.Now >= _until) { Answer = null; Close(); return; }
         Invalidate();
     }

@@ -130,6 +130,7 @@ public sealed class WebScreen : Screen
                 _loading.IsVisible = false;
                 if (!a.IsSuccess) L.Window.Toast($"{_tile.Name} didn't load ({a.WebErrorStatus}).", "warning");
                 else CheckDrm(c);
+                if (SelfCheck.Active) _ = ReportSelfCheck(c, a.IsSuccess);
                 _host.Focus2();
             });
             c.CoreWebView2.NewWindowRequested += (_, a) => { a.Handled = true; c.CoreWebView2.Navigate(a.Uri); };
@@ -149,23 +150,58 @@ public sealed class WebScreen : Screen
         });
     }
 
+    /// <summary>The DRM systems a page could use here: widevine, playready, or blocked.</summary>
+    public const string DrmProbe = """
+        (async () => { const cfg = [{ initDataTypes: ['cenc'], videoCapabilities: [{ contentType: 'video/mp4; codecs="avc1.42E01E"' }] }];
+          try { await navigator.requestMediaKeySystemAccess('com.widevine.alpha', cfg); return 'widevine'; } catch (e) {}
+          try { await navigator.requestMediaKeySystemAccess('com.microsoft.playready.recommendation', cfg); return 'playready'; } catch (e) {}
+          return 'blocked'; })()
+        """;
+
+    /// <summary>ExecuteScriptAsync returns a Promise as "{}", so the result is parked on
+    /// the window and read back until it arrives.</summary>
+    public static async Task<string> EvalPromise(CoreWebView2 web, string promiseExpression, int timeoutMs = 4000)
+    {
+        var slot = "__lounge" + Guid.NewGuid().ToString("N")[..8];
+        await web.ExecuteScriptAsync($"window.{slot} = undefined; Promise.resolve({promiseExpression}).then(r => window.{slot} = String(r), e => window.{slot} = 'error:' + e);");
+        for (int waited = 0; waited < timeoutMs; waited += 100)
+        {
+            var r = await web.ExecuteScriptAsync($"window.{slot} === undefined ? null : window.{slot}");
+            if (r != "null") return System.Text.Json.JsonSerializer.Deserialize<string>(r) ?? "";
+            await Task.Delay(100);
+        }
+        return "timeout";
+    }
+
     private async void CheckDrm(CoreWebView2Controller c)
     {
         if (_drmChecked || !L.Settings.Bool(K.DrmHint)) return;
         _drmChecked = true;
-        const string probe = """
-            (async () => { try {
-              await navigator.requestMediaKeySystemAccess('com.widevine.alpha', [{ initDataTypes: ['cenc'],
-                videoCapabilities: [{ contentType: 'video/mp4; codecs="avc1.42E01E"' }] }]);
-              return 'ok'; } catch (e) { return 'blocked'; } })()
-            """;
         try
         {
-            var result = await c.CoreWebView2.ExecuteScriptAsync(probe);
+            var result = await EvalPromise(c.CoreWebView2, DrmProbe);
             if (result.Contains("blocked") && _tile.AllowMouse)
                 L.Window.Toast($"{_tile.Name} may not play protected video here. Press View and choose \"Open in full browser\" if it won't start.", "web", 7);
         }
         catch (Exception) { }
+    }
+
+    /// <summary>LOUNGE_SELFCHECK: what the embedded browser can do on this machine.</summary>
+    private async Task ReportSelfCheck(CoreWebView2Controller c, bool loaded)
+    {
+        await Task.Delay(1500);
+        string Eval(string r) => r.Trim('"');
+        var title = Eval(await c.CoreWebView2.ExecuteScriptAsync("document.title"));
+        var gamepadApi = Eval(await c.CoreWebView2.ExecuteScriptAsync("typeof navigator.getGamepads === 'function' ? 'yes' : 'no'"));
+        var pads = Eval(await c.CoreWebView2.ExecuteScriptAsync("Array.from(navigator.getGamepads()).filter(p => p).length.toString()"));
+        var drm = await EvalPromise(c.CoreWebView2, DrmProbe);
+        Lounge.Shell.SelfCheck.Report("web", new
+        {
+            loaded, title, gamepadApi, padsVisibleToPage = pads, drm,
+            userAgent = Eval(await c.CoreWebView2.ExecuteScriptAsync("navigator.userAgent")),
+            zoom = c.ZoomFactor,
+        });
+        L.Window.Exit();
     }
 
     public override bool Handle(ActionEvent e)

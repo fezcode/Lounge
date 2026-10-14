@@ -570,6 +570,9 @@ public sealed class MainWindow : Window
     {
         var play = Array.IndexOf(args, "--play");
         if (play >= 0 && play + 1 < args.Length) Playback.Open(args[play + 1]);
+        var web = Array.IndexOf(args, "--web");
+        if (web >= 0 && web + 1 < args.Length)
+            Push(new WebScreen(new Lounge.Core.Launch.Tile { Kind = Lounge.Core.Launch.TileKind.Web, Name = "Web check", Target = args[web + 1], UserAgent = Lounge.Core.Launch.TileStore.TvUserAgent }));
         var files = Array.IndexOf(args, "--files");
         if (files >= 0 && files + 1 < args.Length) Push(new FilesScreen(args[files + 1]));
         var lone = args.FirstOrDefault(a => !a.StartsWith("--") && (File.Exists(a) || Directory.Exists(a)));

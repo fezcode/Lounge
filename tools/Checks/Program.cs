@@ -73,6 +73,7 @@ internal static class Program
             Check("Every theme renders its own home", ThemesDiffer);
             Check("The keyboard fits on screen in every layer", KeyboardFits);
             Check("While an app runs, only the return chord is heard", DormantChord);
+            Check("When a launched app quits by itself, Lounge listens again", DormantRealProcess);
             Check("A video plays, the D-pad skips and the trigger scrubs", PlayAndSeek);
         }
         catch (Exception e)
@@ -386,6 +387,40 @@ internal static class Program
         Assert(L.Router.Context != "Dormant", "Lounge stayed dormant after coming back");
 
         void Spy(ActionEvent e) { if (e.Action == Act.Return) returned = true; }
+    }
+
+    private static void DormantRealProcess()
+    {
+        // A real process stands in for a game: tracked by pid, exactly as the launcher does.
+        var psi = new System.Diagnostics.ProcessStartInfo("ping.exe", "-n 3 127.0.0.1") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true };
+        using var game = System.Diagnostics.Process.Start(psi)!;
+        var exited = false;
+        L.Dormant.LaunchedAppExited += OnExit;
+        try
+        {
+            L.Dormant.Launched("check-game", game.Id);
+            L.Dormant.Observe(loungeInFront: false, launchedAlive: Win32.IsProcessAlive(game.Id));
+            Pump();
+            Assert(L.Router.Context == "Dormant", $"context is {L.Router.Context} while the app runs");
+            var before = _w.Overlays.Count;
+            Press(PadButton.Menu);
+            Assert(_w.Overlays.Count == before, "Lounge opened settings over the running app");
+            game.WaitForExit(10_000);
+            Assert(game.HasExited, "the stand-in app did not finish");
+            L.Dormant.Observe(loungeInFront: false, launchedAlive: Win32.IsProcessAlive(game.Id));
+            Pump();
+            Assert(exited, "Lounge did not notice the app closing");
+            Assert(!L.Dormant.HasLaunchedApp, "the app is still recorded as running");
+            L.Dormant.Observe(loungeInFront: true, launchedAlive: false);
+            Pump();
+            Assert(L.Router.Context != "Dormant", "Lounge is still dormant after coming back");
+            Press(PadButton.Menu);
+            Pump(6);
+            Assert(_w.Overlays.OfType<SettingsPanel>().Any(), "Lounge is not listening again");
+        }
+        finally { L.Dormant.LaunchedAppExited -= OnExit; }
+
+        void OnExit() => exited = true;
     }
 
     private static void PlayAndSeek()
