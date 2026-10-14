@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
@@ -50,9 +50,9 @@ public sealed class NowPlayingScreen : Screen
         var transport = new FocusList(horizontal: true);
         root.Add(transport);
         var prev = Button("previous", () => Playback.PlayPrevious());
-        var play = Button("pause", () => L.Player.TogglePause(), big: true);
+        var play = Button("pause", () => { L.Player.TogglePause(); Refresh(); }, big: true);
         _playIcon.Content = Icons.Make("pause", 44, T.Bg0);
-        play.Content = _playIcon.Margin(28);
+        play.Content = _playIcon.Align(HorizontalAlignment.Center, VerticalAlignment.Center);
         play.Body.Background = T.Text;
         var next = Button("next", () => Playback.PlayNext());
         _shuffle = Button("shuffle", () => { L.Queue.Shuffle = !L.Queue.Shuffle; Refresh(); });
@@ -86,7 +86,12 @@ public sealed class NowPlayingScreen : Screen
 
     private static Card Button(string icon, Action run, bool big = false)
     {
-        var card = new Card(Icons.Make(icon, big ? 44 : 34, T.Text).Margin(big ? 28 : 22), 60) { FocusScale = 1.12 };
+        // Fixed square size: in the row they would otherwise stretch to the big button's height.
+        var size = big ? 100 : 78;
+        var card = new Card(Icons.Make(icon, big ? 44 : 34, T.Text).Align(HorizontalAlignment.Center, VerticalAlignment.Center), 60)
+        {
+            FocusScale = 1.12, Width = size, Height = size, VerticalAlignment = VerticalAlignment.Center,
+        };
         card.Body.Background = T.Surface;
         card.Body.CornerRadius = new CornerRadius(60);
         card.Item.Activate = run;
@@ -166,7 +171,9 @@ public sealed class NowPlayingScreen : Screen
         if (e.Phase is ActionPhase.Released or ActionPhase.Changed) return true;
         switch (e.Action)
         {
-            case Act.PlayPause: p.TogglePause(); Refresh(); return true;
+            // A presses whatever is focused (the transport buttons, a song in Up next);
+            // focus starts on Play, so A alone still plays and pauses.
+            case Act.PlayPause: return base.Handle(e with { Action = Act.Accept });
             case Act.NextItem: Playback.PlayNext(); return true;
             case Act.PrevItem: Playback.PlayPrevious(); return true;
             case Act.Stop:

@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
@@ -93,16 +93,20 @@ public sealed class WebViewHost : NativeControlHost
     [DllImport("user32.dll")] private static extern bool MoveWindow(IntPtr hwnd, int x, int y, int w, int h, bool repaint);
 }
 
-/// <summary>A streaming site inside Lounge. The page reads the controller itself (YouTube
-/// TV is built for it); Lounge only listens for hold View (home), View (options) and
-/// View + B (controller mouse). If the page can't play protected video here, Lounge
-/// suggests the full browser.</summary>
+/// <summary>A streaming site inside Lounge. Lounge drives the page itself through
+/// <see cref="WebPad"/>: arrow keys on TV-style sites, an in-page pointer everywhere else,
+/// the controller keyboard for text fields. B goes back, View opens options, holding B or
+/// View leaves. If the page can't play protected video here, Lounge suggests the full browser.</summary>
 public sealed class WebScreen : Screen
 {
     private readonly Tile _tile;
     private readonly WebViewHost _host;
     private readonly Border _loading;
     private bool _drmChecked;
+    private WebPad? _pad;
+    private bool _reported;
+    private bool _helped, _typing;
+    private long _typeQuietUntil;
 
     public override string Context => "Web";
     public override string Title => _tile.Name;
@@ -123,17 +127,30 @@ public sealed class WebScreen : Screen
         };
         Children.Add(_host);
         Children.Add(_loading);
-        _host.Ready += c =>
+        _host.Ready += async c =>
         {
-            c.CoreWebView2.NavigationCompleted += (_, a) => Dispatcher.UIThread.Post(() =>
+            var pad = new WebPad(c.CoreWebView2, pointer: _tile.AllowMouse);
+            try { await pad.Install(); } catch (Exception) { }
+            _pad = pad;
+            c.CoreWebView2.NavigationCompleted += (_, a) => Dispatcher.UIThread.Post(async () =>
             {
                 _loading.IsVisible = false;
                 if (!a.IsSuccess) L.Window.Toast($"{_tile.Name} didn't load ({a.WebErrorStatus}).", "warning");
                 else CheckDrm(c);
-                if (SelfCheck.Active) _ = ReportSelfCheck(c, a.IsSuccess);
                 _host.Focus2();
+                await pad.PageReady();
+                if (!_helped) { _helped = true; await pad.Hint(pad.HelpText, 9000); }
+                if (SelfCheck.Active) _ = ReportSelfCheck(c, a.IsSuccess);
             });
             c.CoreWebView2.NewWindowRequested += (_, a) => { a.Handled = true; c.CoreWebView2.Navigate(a.Uri); };
+            // A page that closes itself (YouTube TV's "Exit") brings Lounge back.
+            c.CoreWebView2.WindowCloseRequested += (_, _) => Dispatcher.UIThread.Post(Leave);
+            c.CoreWebView2.WebMessageReceived += (_, a) =>
+            {
+                string? json;
+                try { json = a.TryGetWebMessageAsString(); } catch (ArgumentException) { return; }
+                Dispatcher.UIThread.Post(() => OnPageMessage(json));
+            };
             c.CoreWebView2.Navigate(_tile.Target);
         };
         _host.Failed += why => Dispatcher.UIThread.Post(() =>
@@ -189,8 +206,26 @@ public sealed class WebScreen : Screen
     /// <summary>LOUNGE_SELFCHECK: what the embedded browser can do on this machine.</summary>
     private async Task ReportSelfCheck(CoreWebView2Controller c, bool loaded)
     {
-        await Task.Delay(1500);
+        if (_reported) return;
+        _reported = true;
+        await Task.Delay(6000);   // TV apps keep building after the load event
         string Eval(string r) => r.Trim('"');
+        var pad = _pad!;
+        // Controller input reaches the page as trusted events (not via the page's own gamepad code).
+        await c.CoreWebView2.ExecuteScriptAsync("window.__loungeKeys = []; addEventListener('keydown', e => window.__loungeKeys.push(e.key + (e.isTrusted ? '' : '?')), true); window.__loungeClicks = 0; addEventListener('click', e => { if (e.isTrusted) window.__loungeClicks++; }, true);");
+        var focusBefore = Eval(await c.CoreWebView2.ExecuteScriptAsync("(document.activeElement && (document.activeElement.tagName + '.' + document.activeElement.className)).slice(0, 80)"));
+        foreach (var k in new[] { "ArrowDown", "ArrowRight", "ArrowRight" }) { await pad.Key(k); await Task.Delay(500); }
+        var focusAfter = Eval(await c.CoreWebView2.ExecuteScriptAsync("(document.activeElement && (document.activeElement.tagName + '.' + document.activeElement.className)).slice(0, 80)"));
+        var keys = Eval(await c.CoreWebView2.ExecuteScriptAsync("window.__loungeKeys.join(' ')"));
+        pad.MovePointer(5, 5);
+        await pad.Click();
+        await Task.Delay(300);
+        var clicks = Eval(await c.CoreWebView2.ExecuteScriptAsync("String(window.__loungeClicks)"));
+        var injected = Eval(await c.CoreWebView2.ExecuteScriptAsync("String(!!window.__lounge)"));
+        await pad.Hint(pad.HelpText, 9000);
+        await Task.Delay(500);
+        using (var png = File.Create(Lounge.Shell.SelfCheck.PathFor("web.png")))
+            await c.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, png);
         var title = Eval(await c.CoreWebView2.ExecuteScriptAsync("document.title"));
         var gamepadApi = Eval(await c.CoreWebView2.ExecuteScriptAsync("typeof navigator.getGamepads === 'function' ? 'yes' : 'no'"));
         var pads = Eval(await c.CoreWebView2.ExecuteScriptAsync("Array.from(navigator.getGamepads()).filter(p => p).length.toString()"));
@@ -198,6 +233,7 @@ public sealed class WebScreen : Screen
         Lounge.Shell.SelfCheck.Report("web", new
         {
             loaded, title, gamepadApi, padsVisibleToPage = pads, drm,
+            pointerMode = pad.PointerMode, injected, keysReceived = keys, focusBefore, focusAfter, trustedClicks = clicks,
             userAgent = Eval(await c.CoreWebView2.ExecuteScriptAsync("navigator.userAgent")),
             zoom = c.ZoomFactor,
         });
@@ -206,33 +242,142 @@ public sealed class WebScreen : Screen
 
     public override bool Handle(ActionEvent e)
     {
+        // Leaving, settings and volume are Lounge's everywhere.
+        if (e.Action is Act.Home or Act.Settings or Act.VolumeUp or Act.VolumeDown) return false;
+        var pad = _pad;
+        var web = _host.Controller?.CoreWebView2;
+        if (pad is null || web is null)
+        {
+            if (e.Action is Act.Back or Act.ContextMenu && e.Phase == ActionPhase.Pressed) Leave();
+            return true;
+        }
+        switch (e.Action)
+        {
+            case Act.CursorMove:
+                if (e.Phase is ActionPhase.Pressed or ActionPhase.Changed)
+                {
+                    if (pad.PointerMode)
+                    {
+                        var speed = L.Settings.Int(K.CursorSpeed);
+                        var accel = Math.Pow(e.Value, 1.6) * speed * 2.2 / Math.Max(e.Value, 0.0001) / Math.Max(0.5, _host.Controller!.ZoomFactor);
+                        pad.MovePointer(e.X * accel, -e.Y * accel);
+                    }
+                    else if (pad.StickToKey(e.X, e.Y, e.Value, Environment.TickCount64) is { } key) _ = pad.Key(key);
+                }
+                else pad.StickReleased();
+                return true;
+            case Act.CursorScroll:
+                if (e.Phase is ActionPhase.Pressed or ActionPhase.Changed)
+                    _ = pad.Scroll(e.X * 26 * e.Value, -e.Y * 26 * e.Value);
+                return true;
+        }
+        if (e.Phase is not (ActionPhase.Pressed or ActionPhase.Repeated)) return true;
+        switch (e.Action)
+        {
+            case Act.Up: _ = pad.Key("ArrowUp"); return true;
+            case Act.Down: _ = pad.Key("ArrowDown"); return true;
+            case Act.Left: _ = pad.Key("ArrowLeft"); return true;
+            case Act.Right: _ = pad.Key("ArrowRight"); return true;
+        }
         if (e.Phase != ActionPhase.Pressed) return true;
         switch (e.Action)
         {
+            case Act.Accept:
+                if (pad.PointerMode) _ = pad.Click(); else _ = pad.Key("Enter");
+                return true;
+            case Act.Back:
+                Back(pad, web);
+                return true;
             case Act.ContextMenu:
                 Options();
                 return true;
-            case Act.Back:
-                if (_host.Controller?.CoreWebView2.CanGoBack == true) { _host.Controller.CoreWebView2.GoBack(); return true; }
-                L.Window.Remove(this);
+            case Act.Secondary or Act.CursorToggle:
+                _ = pad.TogglePointer();
+                return true;
+            case Act.Tertiary:
+                Type("", "", search: false);
+                return true;
+            case Act.PrevSection:
+                if (web.CanGoBack) web.GoBack();
+                return true;
+            case Act.NextSection:
+                if (web.CanGoForward) web.GoForward();
                 return true;
         }
-        // Everything else belongs to the page.
-        return e.Action is not (Act.Home or Act.CursorToggle);
+        return true;   // nothing else leaks to Lounge's screens underneath
+    }
+
+    /// <summary>B: TV-style pages get their own Back key (YouTube TV asks before exiting and
+    /// then closes, which brings Lounge back); other pages go back a page, and leave from
+    /// the first one.</summary>
+    private void Back(WebPad pad, CoreWebView2 web)
+    {
+        if (!pad.PointerMode) { _ = pad.Key("Escape"); return; }
+        if (web.CanGoBack) web.GoBack();
+        else Leave();
+    }
+
+    private void Leave()
+    {
+        if (L.Window.Find<WebScreen>() == this) L.Window.Remove(this);
+    }
+
+    private void OnPageMessage(string? json)
+    {
+        if (json is null || _pad is not { PointerMode: true }) return;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            var r = doc.RootElement;
+            if (r.GetProperty("kind").GetString() != "text") return;
+            Type(r.GetProperty("label").GetString() ?? "", r.GetProperty("value").GetString() ?? "", r.GetProperty("search").GetBoolean());
+        }
+        catch (Exception e) when (e is System.Text.Json.JsonException or KeyNotFoundException or InvalidOperationException) { }
+    }
+
+    /// <summary>The controller keyboard for whatever text field has focus in the page. The
+    /// typed text replaces the field's value; search fields are submitted.</summary>
+    private void Type(string label, string value, bool search)
+    {
+        if (_typing || Environment.TickCount64 < _typeQuietUntil || _pad is not { } pad) return;
+        _typing = true;
+        var title = string.IsNullOrWhiteSpace(label) ? $"Type into {_tile.Name}" : label.Trim();
+        L.Window.Keyboard(new KeyboardRequest(title, value, SelectAll: false), text =>
+        {
+            _typing = false;
+            // Showing the page again re-focuses the field; don't open the keyboard again for that.
+            _typeQuietUntil = Environment.TickCount64 + 1500;
+            if (text is null) return;
+            DispatcherTimer.RunOnce(async () =>
+            {
+                var web = _host.Controller?.CoreWebView2;
+                if (web is null) return;
+                try
+                {
+                    await web.ExecuteScriptAsync("(() => { const el = document.activeElement; if (!el) return; if (el.select) el.select(); else document.execCommand('selectAll'); })()");
+                    await pad.InsertText(text);
+                    if (search && text.Length > 0) await pad.Key("Enter");
+                }
+                catch (Exception) { }
+            }, TimeSpan.FromMilliseconds(300));
+        });
     }
 
     private void Options()
     {
         var c = _host.Controller;
+        var pad = _pad;
         L.Window.Menu(_tile.Name,
         [
-            new MenuEntry("Back to Lounge", "home", () => L.Window.Remove(this)),
-            new MenuEntry("Controller mouse", "mouse", () => L.Window.ToggleCursor(), L.Window.CursorMode ? "On" : "Off"),
+            new MenuEntry("Back to Lounge", "home", Leave),
+            new MenuEntry("Pointer", "mouse", () => { if (pad is not null) _ = pad.TogglePointer(); }, pad?.PointerMode == true ? "On" : "Off"),
+            new MenuEntry("Keyboard", "keyboard", () => Type("", "", search: false)),
+            new MenuEntry("Show controls", "info", () => { if (pad is not null) DispatcherTimer.RunOnce(() => _ = pad.Hint(pad.HelpText, 9000), TimeSpan.FromMilliseconds(300)); }),
             new MenuEntry("Go back a page", "back", () => { if (c?.CoreWebView2.CanGoBack == true) c.CoreWebView2.GoBack(); }),
             new MenuEntry("Reload", "refresh", () => c?.CoreWebView2.Reload()),
             new MenuEntry("Zoom in", "plus", () => { if (c is not null) c.ZoomFactor = Math.Min(3, c.ZoomFactor + 0.1); }),
             new MenuEntry("Zoom out", "search", () => { if (c is not null) c.ZoomFactor = Math.Max(0.5, c.ZoomFactor - 0.1); }),
-            new MenuEntry("Open in full browser", "external", () => { L.Window.Remove(this); Launcher.Launch(_tile.Clone().Also(t => t.OpenExternally = true)); }),
+            new MenuEntry("Open in full browser", "external", () => { Leave(); Launcher.Launch(_tile.Clone().Also(t => t.OpenExternally = true)); }),
         ]);
     }
 

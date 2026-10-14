@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
@@ -68,7 +68,7 @@ public sealed class AddAppScreen : BrowseScreen
         var browse = new Card(Ui.H(18, Icons.Make("folder", 30, T.Accent), Ui.Text("Find a program in Files", T.Body, T.Accent, FontWeight.SemiBold)).Margin(24, 16), 14) { FocusScale = 1.01 };
         browse.Body.Background = T.WithAlpha(T.AccentColor, 0.12);
         browse.Item.Activate = () => L.Window.Push(new FilesScreen(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-            new FilePick(FilePickKind.Program, "Choose a program", path => Added(new Tile { Kind = TileKind.App, Name = Path.GetFileNameWithoutExtension(path), Target = path }))));
+            new FilePick(FilePickKind.Program, "Choose a program", path => Added(new Tile { Kind = TileKind.App, Name = Path.GetFileNameWithoutExtension(path), Target = path, AllowMouse = true }))));
         panel.Children.Add(browse);
         list.Add(browse.Item);
 
@@ -83,7 +83,7 @@ public sealed class AddAppScreen : BrowseScreen
         foreach (var (name, path) in ShellIcons.StartMenuApps())
         {
             var card = Row(name, path, path);
-            card.Item.Activate = () => Added(new Tile { Kind = TileKind.App, Name = name, Target = path });
+            card.Item.Activate = () => Added(new Tile { Kind = TileKind.App, Name = name, Target = path, AllowMouse = true });
             panel.Children.Add(card);
             list.Add(card.Item);
         }
@@ -95,7 +95,7 @@ public sealed class AddAppScreen : BrowseScreen
             foreach (var (name, aumid) in store)
             {
                 var card = Row(name, "Microsoft Store", null);
-                card.Item.Activate = () => Added(new Tile { Kind = TileKind.StoreApp, Name = name, Target = aumid });
+                card.Item.Activate = () => Added(new Tile { Kind = TileKind.StoreApp, Name = name, Target = aumid, AllowMouse = true });
                 panel.Children.Add(card);
                 list.Add(card.Item);
             }
@@ -138,7 +138,7 @@ public sealed class TileEditorScreen : BrowseScreen
     ];
 
     public static TileEditorScreen NewWeb() =>
-        new(new Tile { Kind = TileKind.Web, Name = "New site", Target = "https://", Color = "#0A84FF" }, isNew: true);
+        new(new Tile { Kind = TileKind.Web, Name = "New site", Target = "https://", Color = "#0A84FF", AllowMouse = true }, isNew: true);
 
     public TileEditorScreen(Tile tile, bool isNew = false) : base(isNew ? "Add a website" : $"Edit {tile.Name}")
     {
@@ -203,7 +203,9 @@ public sealed class TileEditorScreen : BrowseScreen
         if (_tile.IsWeb)
             Row("external", "Open in full browser", () => _tile.OpenExternally ? "Yes" : "No, inside Lounge", () => _tile.OpenExternally = !_tile.OpenExternally);
         if (_tile.Kind != TileKind.Cogas)
-            Row("mouse", "Allow controller mouse", () => _tile.AllowMouse ? "Yes" : "No", () => _tile.AllowMouse = !_tile.AllowMouse);
+            Row("mouse", _tile.IsWeb ? "Start with the pointer" : "Start with the controller mouse",
+                () => _tile.AllowMouse ? "Yes" : _tile.IsWeb ? "No, arrow keys (TV sites)" : "No (hold View + B for it)",
+                () => _tile.AllowMouse = !_tile.AllowMouse);
         if (!_tile.IsWeb)
         {
             Row("game", "This is a game", () => _tile.IsGame ? "Yes" : "No", () => _tile.IsGame = !_tile.IsGame);

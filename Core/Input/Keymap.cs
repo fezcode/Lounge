@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 
 namespace Lounge.Core.Input;
@@ -39,7 +39,10 @@ public enum ConflictMode { Swap, Replace }
 /// binds RB itself.</summary>
 public sealed class Keymap
 {
-    public const int Version = 1;
+    /// <summary>2: web pages became Lounge-driven, so Web bindings saved by version 1
+    /// (which left everything to the page) and Cursor bindings (no return chord) are
+    /// replaced by the new defaults.</summary>
+    public const int Version = 2;
 
     public static readonly IReadOnlyDictionary<string, string?> Parents = new Dictionary<string, string?>
     {
@@ -48,7 +51,7 @@ public sealed class Keymap
         ["Player"] = "Global",
         ["Keyboard"] = "Global",
         ["Files"] = "Global",
-        ["Web"] = null,
+        ["Web"] = "Global",
         ["Cursor"] = null,
         ["Dormant"] = null,
     };
@@ -194,7 +197,10 @@ public sealed class Keymap
 
         P("Files", PadButton.X, Act.FileSelect); P("Files", PadButton.Y, Act.FileRename);
 
-        H("Web", PadButton.View, Act.Home);
+        // Lounge drives web pages itself (keys or an in-page pointer); sticks are analog here.
+        N("Web", PadButton.LSUp | PadButton.LSDown | PadButton.LSLeft | PadButton.LSRight, Act.CursorMove);
+        N("Web", PadButton.RSUp | PadButton.RSDown | PadButton.RSLeft | PadButton.RSRight, Act.CursorScroll);
+        H("Web", PadButton.B, Act.Home);
         H("Web", PadButton.View | PadButton.B, Act.CursorToggle);
 
         N("Cursor", PadButton.LSUp | PadButton.LSDown | PadButton.LSLeft | PadButton.LSRight, Act.CursorMove);
@@ -202,6 +208,7 @@ public sealed class Keymap
         P("Cursor", PadButton.A, Act.CursorClick); P("Cursor", PadButton.X, Act.CursorRightClick);
         P("Cursor", PadButton.Y, Act.CursorKeyboard); P("Cursor", PadButton.B, Act.CursorBack);
         H("Cursor", PadButton.View, Act.Home);
+        H("Cursor", PadButton.View | PadButton.Menu, Act.Return);
         H("Cursor", PadButton.View | PadButton.B, Act.CursorToggle);
         P("Cursor", PadButton.RB, Act.VolumeUp); P("Cursor", PadButton.LB, Act.VolumeDown);
 
@@ -241,9 +248,11 @@ public sealed class Keymap
         var k = Defaults();
         var root = JsonNode.Parse(json) as JsonObject ?? throw new JsonException("keymap.json is not an object");
         if (root["contexts"] is not JsonObject contexts) return k;
+        var version = root["version"] is JsonValue vv && vv.TryGetValue<int>(out var ver) ? ver : 1;
         foreach (var (ctx, node) in contexts)
         {
             if (!Parents.ContainsKey(ctx) || node is not JsonArray arr) continue;
+            if (version < 2 && ctx is "Web" or "Cursor") continue;
             var list = new List<BoundAction>();
             foreach (var item in arr.OfType<JsonObject>())
             {

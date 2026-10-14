@@ -458,8 +458,10 @@ public sealed class MainWindow : Window
         UpdateContext();
     }
 
+    /// <summary>Any app that is not a game can be driven with the controller mouse (hold
+    /// View + B); games keep every button for themselves.</summary>
     private bool LaunchedTileAllowsMouse() =>
-        L.Dormant.LaunchedTileId is { } id && L.Tiles.Find(id) is { AllowMouse: true, IsGame: false };
+        L.Dormant.LaunchedTileId is { } id && L.Tiles.Find(id) is { IsGame: false, Kind: not TileKind.Cogas };
 
     private bool HandleCursor(ActionEvent e)
     {
@@ -505,9 +507,14 @@ public sealed class MainWindow : Window
     {
         L.Sound.SetAmbient(false);
         if (L.Player.IsPlaying) L.Player.Pause();
-        Toast($"Opening {tile.Name}. Hold View + Menu to come back.", "external", 4);
+        var mouse = !tile.IsGame && tile.Kind != TileKind.Cogas;
+        Toast(mouse
+            ? $"Opening {tile.Name}. Hold View + B for the controller mouse; hold View + Menu to come back."
+            : $"Opening {tile.Name}. Hold View + Menu to come back.", "external", 5);
+        // Apps that don't know controllers start with the controller mouse on.
+        if (mouse && tile.AllowMouse && !_cursorMode) DispatcherTimer.RunOnce(() => { if (L.Dormant.HasLaunchedApp && !_cursorMode) ToggleCursor(); }, TimeSpan.FromSeconds(1));
         if (L.Settings.Bool(K.MinimizeOnLaunch) && !_windowed)
-            DispatcherTimer.RunOnce(() => { if (L.Dormant.HasLaunchedApp) WindowState = WindowState.Minimized; }, TimeSpan.FromSeconds(1.5));
+            DispatcherTimer.RunOnce(() => { if (L.Dormant.HasLaunchedApp) WindowState = WindowState.Minimized; }, TimeSpan.FromSeconds(3));
     }
 
     private void Watch()
@@ -576,7 +583,8 @@ public sealed class MainWindow : Window
         if (play >= 0 && play + 1 < args.Length) Playback.Open(args[play + 1]);
         var web = Array.IndexOf(args, "--web");
         if (web >= 0 && web + 1 < args.Length)
-            Push(new WebScreen(new Lounge.Core.Launch.Tile { Kind = Lounge.Core.Launch.TileKind.Web, Name = "Web check", Target = args[web + 1], UserAgent = Lounge.Core.Launch.TileStore.TvUserAgent }));
+            Push(new WebScreen(L.Tiles.All.FirstOrDefault(t => t.IsWeb && t.Target == args[web + 1])?.Clone()
+                ?? new Lounge.Core.Launch.Tile { Kind = Lounge.Core.Launch.TileKind.Web, Name = "Web check", Target = args[web + 1], AllowMouse = true }));
         var files = Array.IndexOf(args, "--files");
         if (files >= 0 && files + 1 < args.Length) Push(new FilesScreen(args[files + 1]));
         var lone = args.FirstOrDefault(a => !a.StartsWith("--") && (File.Exists(a) || Directory.Exists(a)));
@@ -674,11 +682,9 @@ public sealed class MainWindow : Window
 
     // ------------------------------------------------------------------ exit
 
-    private void AskExit()
-    {
-        if (!L.Settings.Bool(K.ConfirmExit)) { Exit(); return; }
-        Lounge.Shell.Launcher.ShowPowerMenu();
-    }
+    /// <summary>B at the root of Home. One press never closes Lounge: it opens the Power
+    /// menu, and leaving is a choice made there.</summary>
+    private void AskExit() => Lounge.Shell.Launcher.ShowPowerMenu();
 
     public void Exit()
     {

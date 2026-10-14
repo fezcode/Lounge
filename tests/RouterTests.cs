@@ -149,6 +149,64 @@ public class RouterTests
     }
 
     [Fact]
+    public void On_a_web_page_every_button_reaches_Lounge()
+    {
+        // Version 1 left web pages to read the controller themselves, which they cannot
+        // inside Lounge: B, A and the D-pad did nothing and there was no way back.
+        var r = new Rig("Web");
+        r.Pad(PadButton.DPadDown); r.Pad(PadButton.None);
+        r.Pad(PadButton.A); r.Pad(PadButton.None);
+        r.Pad(PadButton.B); r.Pad(PadButton.None);         // B is a tap (it also starts hold-to-leave)
+        Assert.Equal(new[] { Act.Down, Act.Accept, Act.Back }, r.Names);
+
+        r.Events.Clear();
+        r.Pad(PadButton.B);
+        r.Advance(700, PadButton.B);
+        r.Pad(PadButton.None);
+        Assert.Equal(new[] { Act.Home }, r.Names);          // hold B leaves the page
+
+        r.Events.Clear();
+        r.Pad(PadButton.LSLeft, lx: -0.9f);
+        Assert.Equal(Act.CursorMove, r.Events.Single().Action);
+    }
+
+    [Fact]
+    public void With_the_controller_mouse_on_View_and_Menu_still_bring_Lounge_back()
+    {
+        var r = new Rig("Cursor");
+        r.Router.Options.ReturnHoldMs = 1000;
+        r.Pad(PadButton.View | PadButton.Menu);
+        r.Advance(1100, PadButton.View | PadButton.Menu);
+        Assert.Contains(Act.Return, r.Names);
+        Assert.DoesNotContain(Act.Home, r.Names);
+    }
+
+    [Fact]
+    public void A_version_1_keymap_file_gets_the_new_web_bindings()
+    {
+        var old = """{ "version": 1, "contexts": { "Web": [ { "input": "View", "gesture": "hold", "action": "App.Home" } ], "Global": [ { "input": "A", "gesture": "press", "action": "Nav.Accept" } ] } }""";
+        var k = Keymap.FromJson(old);
+        Assert.Equal(Keymap.Defaults().In("Web").Count, k.In("Web").Count);
+        Assert.Single(k.In("Global"));                       // other contexts still load as saved
+        var current = Keymap.FromJson(k.ToJson());
+        Assert.Equal(k.In("Web").Count, current.In("Web").Count);
+    }
+
+    [Fact]
+    public void A_busy_UI_does_not_turn_one_press_into_a_burst()
+    {
+        var r = new Rig();
+        r.Router.Options.RepeatDelayMs = 400;
+        r.Router.Options.RepeatRateMs = 100;
+        r.Pad(PadButton.DPadLeft);
+        r.Advance(900, PadButton.DPadLeft, step: 900);   // the UI thread froze while it was held
+        r.Advance(50, PadButton.DPadLeft, step: 8);      // normal frames again
+        Assert.Single(r.Events);                         // the old code fired 5 repeats here
+        r.Advance(200, PadButton.DPadLeft, step: 8);     // still held: repeats resume at the rate
+        Assert.InRange(r.Events.Count, 2, 3);
+    }
+
+    [Fact]
     public void Accept_does_not_repeat()
     {
         var r = new Rig("Files");

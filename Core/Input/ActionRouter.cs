@@ -50,6 +50,9 @@ public sealed class ActionRouter
     private PadButton _consumed;
     private PadButton _pendingTap;
     private readonly Dictionary<PadButton, long> _nextRepeat = new();
+    private long? _lastUpdate;
+    /// <summary>A gap between updates longer than this means the UI thread was busy.</summary>
+    public const int StallMs = 100;
     private readonly HashSet<BoundAction> _firedHolds = new();
     private readonly HashSet<BoundAction> _activeAnalog = new();
 
@@ -155,11 +158,16 @@ public sealed class ActionRouter
         var bindings = Effective;
 
         // Holds and chords, biggest first so View+Menu wins over View.
-        foreach (var b in bindings.Where(b => b.Input.Gesture == Gesture.Hold).OrderByDescending(b => PadButtons.Count(b.Input.Buttons)))
+        var holds = bindings.Where(b => b.Input.Gesture == Gesture.Hold).OrderByDescending(b => PadButtons.Count(b.Input.Buttons)).ToList();
+        foreach (var b in holds)
         {
             var buttons = b.Input.Buttons;
             if ((state.Buttons & buttons) != buttons || _firedHolds.Contains(b)) continue;
             if ((_consumed & buttons) != 0) continue;
+            // Holding View + Menu must not fire "hold View" on the way: a hold waits while a
+            // bigger held chord that contains it is still counting.
+            if (holds.Any(big => big != b && (big.Input.Buttons & buttons) == buttons && big.Input.Buttons != buttons &&
+                                 (state.Buttons & big.Input.Buttons) == big.Input.Buttons && !_firedHolds.Contains(big))) continue;
             var since = PadButtons.Split(buttons).Max(x => _downAt.GetValueOrDefault(x, now));
             if (now - since < HoldFor(b)) continue;
             _firedHolds.Add(b);
@@ -190,15 +198,20 @@ public sealed class ActionRouter
             if (Act.Describe(bound.Action).Repeats) _nextRepeat[btn] = now + Options.RepeatDelayMs;
         }
 
-        // Auto-repeat.
+        // Auto-repeat. Repeats never catch up: after the UI was busy (a screen building,
+        // pictures loading) the first frame back must not fire the repeats it missed one
+        // per frame, or a single press jumps several items.
+        var stalled = _lastUpdate is { } last && now - last > StallMs;
+        _lastUpdate = now;
         foreach (var (btn, due) in _nextRepeat.ToList())
         {
             if ((state.Buttons & btn) == 0 || (_consumed & btn) != 0) { _nextRepeat.Remove(btn); continue; }
+            if (stalled) { _nextRepeat[btn] = Math.Max(due, now + Options.RepeatRateMs); continue; }
             if (now < due) continue;
             var bound = bindings.FirstOrDefault(b => b.Input.Gesture == Gesture.Press && b.Input.Buttons == btn);
             if (bound is null) { _nextRepeat.Remove(btn); continue; }
             Raise(new ActionEvent(bound.Action, ActionPhase.Repeated));
-            _nextRepeat[btn] = Math.Max(due + Options.RepeatRateMs, now + 1);
+            _nextRepeat[btn] = now + Options.RepeatRateMs;
         }
 
         // Taps fire on release when nothing bigger used the button.

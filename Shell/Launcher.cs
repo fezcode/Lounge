@@ -109,7 +109,12 @@ public static class Launcher
     {
         L.Window.Menu("Power",
         [
-            new MenuEntry("Leave Lounge", "close", () => L.Window.Exit()),
+            new MenuEntry("Leave Lounge", "close", () =>
+            {
+                if (L.Settings.Bool(K.ConfirmExit))
+                    L.Window.Ask("Leave Lounge?", "Lounge closes until you open it again.", ["Leave", "Stay"], 1, i => { if (i == 0) L.Window.Exit(); }, "close");
+                else L.Window.Exit();
+            }),
             new MenuEntry("Sleep", "clock", () => Confirm("Put the PC to sleep?", () => SetSuspendState(false, false, false))),
             new MenuEntry("Restart", "refresh", () => Confirm("Restart the PC?", () => Shutdown("/r"))),
             new MenuEntry("Shut down", "power", () => Confirm("Shut down the PC?", () => Shutdown("/s")), Danger: true),

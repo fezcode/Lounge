@@ -1,4 +1,4 @@
-﻿namespace Lounge.Core.Settings;
+namespace Lounge.Core.Settings;
 
 /// <summary>Setting keys, so code never spells one twice. JSON keys are dotted; ini keys
 /// use tivi's exact names.</summary>
@@ -199,7 +199,7 @@ public static class SettingsSchema
         return
         [
             // ---- General
-            Toggle(K.ConfirmExit, "General", "Ask before leaving Lounge", true),
+            Toggle(K.ConfirmExit, "General", "Ask before leaving Lounge", true, "B on Home always opens the Power menu; this adds a yes/no before Leave Lounge."),
             Toggle(K.ShowClock, "General", "Show clock", true),
             Toggle(K.Clock24h, "General", "24-hour clock", true),
             Int(K.IdleDimMinutes, "General", "Dim when idle", 10, 0, 60, 1, " min", "Fades to a quiet clock after this long without input. 0 turns it off."),

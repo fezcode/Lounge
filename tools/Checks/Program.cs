@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Threading;
@@ -64,7 +64,8 @@ internal static class Program
             if (Environment.GetEnvironmentVariable("LOUNGE_CHECKS_TRACE") is not null) L.Router.Fired += e => Console.WriteLine($"    action {e.Action} {e.Phase} ctx={L.Router.Context} top={_w.Top?.GetType().Name}");
 
             Check("Home takes focus and the D-pad moves it", HomeNavigation);
-            Check("Menu opens settings; the theme changes from the controller", ChangeTheme);
+            Check("B on Home opens the Power menu and never quits", BackOnHome);
+Check("Menu opens settings; the theme changes from the controller", ChangeTheme);
             Check("A library folder is added from Files", AddLibraryFolder);
             Check("A file is renamed with the controller keyboard", RenameFile);
             Check("New folder, copy and paste from the options menu", NewFolderCopyPaste);
@@ -75,6 +76,7 @@ internal static class Program
             Check("While an app runs, only the return chord is heard", DormantChord);
             Check("When a launched app quits by itself, Lounge listens again", DormantRealProcess);
             Check("A video plays, the D-pad skips and the trigger scrubs", PlayAndSeek);
+Check("In Now Playing, A presses the focused button and song", NowPlayingButtons);
         }
         catch (Exception e)
         {
@@ -170,6 +172,23 @@ internal static class Program
         Assert(_w.Top.Focused != start, "D-pad down did not move focus");
         Press(PadButton.DPadUp);
         Assert(_w.Top.Focused == start, "D-pad up did not come back");
+    }
+
+    private static void BackOnHome()
+    {
+        // Even with "Ask before leaving" off, one B press must not close Lounge.
+        L.Settings.Set(K.ConfirmExit, false);
+        Pump();
+        Press(PadButton.B);    // first B brings focus back to the first tile (if it moved)
+        Press(PadButton.B);
+        Pump(30);
+        var menu = _w.Overlays.OfType<ModalLayer>().LastOrDefault();
+        Assert(menu is not null, "B on Home did not open the Power menu");
+        Assert(_w.IsVisible, "Lounge closed on B");
+        Press(PadButton.B);
+        Pump(30);
+        Assert(!_w.Overlays.OfType<ModalLayer>().Any(), "B did not close the Power menu");
+        L.Settings.Set(K.ConfirmExit, true);
     }
 
     private static void ChangeTheme()
@@ -450,5 +469,45 @@ internal static class Program
         Press(PadButton.B);                        // stop
         Pump(10);
         Assert(_w.Top is not PlayerScreen, "B did not leave the player");
+    }
+
+    private static void NowPlayingButtons()
+    {
+        var song = Path.Combine(Path.GetTempPath(), "lounge-clips-v2", "song.mp3");
+        if (!File.Exists(song)) throw new InvalidOperationException("test song missing; run the unit tests first");
+        var dir = Path.Combine(Path.GetTempPath(), "lounge-checks-album");
+        Directory.CreateDirectory(dir);
+        var songs = new[] { "01 One.mp3", "02 Two.mp3", "03 Three.mp3" }.Select(n => Path.Combine(dir, n)).ToList();
+        foreach (var s in songs) File.Copy(song, s, overwrite: true);
+
+        Playback.Open(songs[0], songs, 0);
+        bool Wait(Func<bool> ok) { var d = DateTime.Now.AddSeconds(8); while (DateTime.Now < d && !ok()) Pump(5); return ok(); }
+        Assert(_w.Top is NowPlayingScreen, "Now Playing did not open");
+        Assert(Wait(() => L.Player.IsPlaying), $"not playing ({L.Player.State}, {L.Player.LastError})");
+
+        Press(PadButton.A);                        // focus starts on Play: pause
+        Assert(Wait(() => !L.Player.IsPlaying), "A on Play did not pause");
+        Press(PadButton.A);
+        Assert(Wait(() => L.Player.IsPlaying), "A on Play did not resume");
+
+        Press(PadButton.DPadRight);                // Play -> Next
+        Press(PadButton.A);
+        Assert(Wait(() => L.Queue.Index == 1), $"A on Next did not skip (queue at {L.Queue.Index})");
+
+        Press(PadButton.DPadRight);                // Next -> Repeat
+        Press(PadButton.A);
+        Pump(5);
+        Assert(L.Queue.Repeat != RepeatMode.Off, "A on Repeat did not change repeat");
+        L.Queue.Repeat = RepeatMode.Off;
+
+        Press(PadButton.DPadRight);                // into Up next
+        Press(PadButton.DPadDown);
+        Press(PadButton.DPadDown);                 // third song
+        Press(PadButton.A);
+        Assert(Wait(() => L.Queue.Index == 2), $"A on a song in Up next did not play it (queue at {L.Queue.Index})");
+
+        Press(PadButton.B);
+        Pump(10);
+        Assert(_w.Top is not NowPlayingScreen, "B did not leave Now Playing");
     }
 }
