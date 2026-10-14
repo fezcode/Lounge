@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -516,6 +516,9 @@ public sealed class MainWindow : Window
         var pid = L.Dormant.LaunchedPid;
         var alive = pid is { } p && Win32.IsProcessAlive(p);
         L.Dormant.Observe(inFront, alive);
+        // Windows can knock a full-screen window back to normal when another app takes the
+        // front; whenever Lounge is in front again it goes back to full screen.
+        if (inFront && !_windowed && WindowState != WindowState.FullScreen) WindowState = WindowState.FullScreen;
 
         var idleMinutes = L.Settings.Int(K.IdleDimMinutes);
         var idleFor = _clock.ElapsedMilliseconds - _lastInput;
@@ -553,7 +556,8 @@ public sealed class MainWindow : Window
 
     private void ComeBack()
     {
-        if (WindowState == WindowState.Minimized) WindowState = _windowed ? WindowState.Normal : WindowState.FullScreen;
+        if (!_windowed) WindowState = WindowState.FullScreen;
+        else if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
         Win32.BringToFront(_hwnd);
         Activate();
         UpdateAmbient();

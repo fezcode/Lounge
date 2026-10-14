@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Lounge.Core.Launch;
 using Lounge.Core.Settings;
@@ -40,6 +40,8 @@ public static class Launcher
                         L.Window.Toast("Cogas isn't installed. Set its location in Settings > Launcher.", "warning");
                         return;
                     }
+                    if (Win32.FileVersion(cogas) is { } cv && cv < Win32.CogasBigPictureSince)
+                        L.Window.Toast($"Cogas {cv.ToString(3)} has no Big Picture mode. Update it to {Win32.CogasBigPictureSince.ToString(3)} or newer (Airlift can do it).", "warning", 6);
                     pid = Start(cogas, "--big-picture", Path.GetDirectoryName(cogas));
                     break;
                 default:

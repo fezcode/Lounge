@@ -101,6 +101,19 @@ public static class Win32
         return File.Exists(fallback) ? fallback : null;
     }
 
+    /// <summary>Cogas learned --big-picture in 0.20.0; older builds open their normal window.</summary>
+    public static readonly Version CogasBigPictureSince = new(0, 20, 0);
+
+    public static Version? FileVersion(string exe)
+    {
+        try
+        {
+            var v = System.Diagnostics.FileVersionInfo.GetVersionInfo(exe);
+            return new Version(v.FileMajorPart, v.FileMinorPart, v.FileBuildPart);
+        }
+        catch { return null; }
+    }
+
     public static bool SteamInstalled()
     {
         using var key = Registry.CurrentUser.OpenSubKey(@"Software\Valve\Steam");

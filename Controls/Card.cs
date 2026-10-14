@@ -22,7 +22,26 @@ public class Card : Panel
 
     public Border Body { get; }
     public FocusItem Item { get; }
-    public double FocusScale { get; set; } = T.Def.FocusScale;
+    private double _focusScale = T.Def.FocusScale;
+
+    /// <summary>How far the card lifts. Rows that barely lift get a tight glow so it fits
+    /// inside the list's edges instead of being cut off.</summary>
+    public double FocusScale
+    {
+        get => _focusScale;
+        set { _focusScale = value; ShapeGlow(); }
+    }
+
+    private void ShapeGlow()
+    {
+        if (_glow is null) return;
+        var row = _focusScale <= 1.03;
+        _glow.BoxShadow = new BoxShadows(new BoxShadow
+        {
+            OffsetY = row ? 6 : 18, Blur = row ? 18 : 48, Spread = 0,
+            Color = Color.FromArgb(row ? (byte)110 : (byte)150, 0, 0, 0),
+        }, [new BoxShadow { Blur = row ? 12 : 34, Spread = row ? 0 : 2, Color = Color.FromArgb(row ? (byte)60 : (byte)90, T.FocusColor.R, T.FocusColor.G, T.FocusColor.B) }]);
+    }
     public bool ShowRing { get; set; } = true;
 
     public event Action<bool>? Focused;
@@ -60,6 +79,7 @@ public class Card : Panel
             Opacity = 0,
             IsHitTestVisible = false,
         };
+        ShapeGlow();
         Children.Add(_glow);
         Children.Add(Body);
         Children.Add(_ring);

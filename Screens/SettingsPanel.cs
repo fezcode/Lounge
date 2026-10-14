@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
@@ -24,8 +24,8 @@ public sealed class SettingsPanel : Grid, IInputLayer
     private readonly FocusScope _scope;
     private readonly FocusList _sections = new(horizontal: false, rememberIndex: true);
     private readonly FocusList _rows = new(horizontal: false, rememberIndex: true);
-    private readonly StackPanel _sectionPanel = new() { Spacing = 4 };
-    private readonly StackPanel _rowPanel = new() { Spacing = 6 };
+    private readonly StackPanel _sectionPanel = new() { Spacing = 4, Margin = new Thickness(16, 8, 16, 24) };
+    private readonly StackPanel _rowPanel = new() { Spacing = 6, Margin = new Thickness(16, 8, 16, 24) };
     private readonly ScrollViewer _rowScroll;
     private readonly TextBlock _sectionTitle = Ui.Text("", T.Title, T.Text, T.TitleWeight, letterSpacing: 4);
     private readonly TextBlock _help = new() { FontSize = T.Caption, Foreground = T.TextMuted, TextWrapping = TextWrapping.Wrap, MinHeight = 60 };

@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using FFmpeg.AutoGen;
 using Lounge.Core.Library;
 
@@ -21,7 +21,7 @@ public sealed record TrackInfo(int StreamIndex, TrackKind Kind, string Codec, st
                 parts.Add(Channels switch { 1 => "Mono", 2 => "Stereo", 6 => "5.1", 8 => "7.1", _ => Channels > 0 ? $"{Channels} ch" : "" });
             parts.Add(Codec.ToUpperInvariant());
             if (IsForced) parts.Add("Forced");
-            return string.Join(" Â· ", parts.Where(p => p.Length > 0).Distinct());
+            return string.Join(" · ", parts.Where(p => p.Length > 0).Distinct());
         }
     }
 

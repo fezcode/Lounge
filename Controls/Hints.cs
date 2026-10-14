@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -47,6 +47,20 @@ public static class Hints
                 },
             };
         }
+        var label = new TextBlock
+        {
+            Text = ShortName(b), FontSize = Math.Max(16, Math.Round(size * 0.45)), FontWeight = FontWeight.Bold,
+            Foreground = T.Text,
+            HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+        };
+        // View (two overlapping windows) and Menu (three lines) carry the symbol printed on the pad.
+        Control content = b is PadButton.View or PadButton.Menu
+            ? new StackPanel
+            {
+                Orientation = Orientation.Horizontal, Spacing = 5, VerticalAlignment = VerticalAlignment.Center,
+                Children = { Icons.Make(b == PadButton.View ? "view" : "menu", Math.Round(size * 0.5), T.Text, 2.2), label },
+            }
+            : label;
         return new Border
         {
             Height = size, MinWidth = size,
@@ -54,12 +68,7 @@ public static class Hints
             CornerRadius = new CornerRadius(8),
             BorderBrush = T.TextMuted,
             BorderThickness = new Thickness(2),
-            Child = new TextBlock
-            {
-                Text = ShortName(b), FontSize = Math.Max(16, Math.Round(size * 0.45)), FontWeight = FontWeight.Bold,
-                Foreground = T.Text,
-                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
-            },
+            Child = content,
         };
     }
 

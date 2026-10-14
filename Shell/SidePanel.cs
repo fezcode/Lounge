@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
@@ -40,7 +40,7 @@ public sealed class SidePanel : Grid, IInputLayer
     {
         _closed = closed;
         var list = new FocusList(horizontal: false);
-        var panel = new StackPanel { Spacing = 4 };
+        var panel = new StackPanel { Spacing = 4, Margin = new Thickness(16, 8, 16, 24) };
         foreach (var r in rows)
         {
             if (r.Header is { } h) panel.Children.Add(Ui.Text(h.ToUpperInvariant(), T.Caption, T.TextMuted, FontWeight.Bold, letterSpacing: 3).Margin(24, 22, 0, 8));

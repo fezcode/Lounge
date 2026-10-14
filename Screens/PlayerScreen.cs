@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
@@ -559,7 +559,7 @@ public sealed class PlayerScreen : Screen
         _skipTarget = Math.Clamp(from + seconds, 0, Math.Max(0, L.Player.Duration - 1));
         _skipAt = now;
         L.Player.Seek(_skipTarget);
-        Badge((seconds > 0 ? "+" : "âˆ’") + (Math.Abs(seconds) >= 60 ? $"{Math.Abs(seconds) / 60:0} min" : $"{Math.Abs(seconds):0} s"));
+        Badge((seconds > 0 ? "+" : "−") + (Math.Abs(seconds) >= 60 ? $"{Math.Abs(seconds) / 60:0} min" : $"{Math.Abs(seconds):0} s"));
         L.Play(UiSound.Move);
     }
 
@@ -620,7 +620,7 @@ public sealed class PlayerScreen : Screen
         }
         if (Math.Abs(speed - _seekSpeed) > 0.01 && _seekMode == SeekMode.Scrub) L.Rumble(0.15f, 25);
         _seekSpeed = speed;
-        Badge((dir > 0 ? "â–¶â–¶  " : "â—€â—€  ") + $"{speed:0}Ã—", stay: true);
+        Badge((dir > 0 ? "▶▶  " : "◀◀  ") + $"{speed:0}×", stay: true);
     }
 
     private void EndTriggerSeek()
@@ -692,7 +692,7 @@ public sealed class PlayerScreen : Screen
             new PanelRow { Label = "Subtitle timing", Icon = "clock", Value = () => p.Subtitles.DelayMs == 0 ? "In sync" : $"{(p.Subtitles.DelayMs > 0 ? "+" : "")}{p.Subtitles.DelayMs} ms",
                 Step = d => p.Subtitles.DelayMs = Math.Clamp(p.Subtitles.DelayMs + d * 100, -600_000, 600_000) },
             new PanelRow { Label = "Subtitle size", Icon = "subtitles", Value = () => Show(K.SubFontScale), Step = d => L.Settings.Step(K.SubFontScale, d) },
-            new PanelRow { Header = "Playback", Label = "Speed", Icon = "speed", Value = () => $"{p.Speed:0.##}Ã—", Step = d => p.SetSpeed(p.Speed + d * 0.25) },
+            new PanelRow { Header = "Playback", Label = "Speed", Icon = "speed", Value = () => $"{p.Speed:0.##}×", Step = d => p.SetSpeed(p.Speed + d * 0.25) },
             new PanelRow { Label = "Keep pitch", Icon = "audio", Value = () => L.Settings.Bool(K.PitchCorrect) ? "On" : "Off",
                 Step = _ => { L.Settings.Step(K.PitchCorrect, 1); p.SetPitchCorrect(L.Settings.Bool(K.PitchCorrect)); } },
             new PanelRow { Header = "Picture", Label = "Brightness", Icon = "sun", Value = () => Show(K.Brightness), Step = d => AdjustPicture(K.Brightness, d) },
@@ -761,9 +761,9 @@ public sealed class PlayerScreen : Screen
         var a = p.Tracks.FirstOrDefault(t => t.StreamIndex == p.AudioStream);
         _infoText.Text =
             $"{Path.GetFileName(_path)}\n" +
-            (v is null ? "" : $"Video   {v.Width}Ã—{v.Height} {v.Codec.ToUpperInvariant()} Â· {(p.HardwareDecoder ?? "software decoding")} Â· {(_surface is GlVideoSurface ? "GPU colour" : "CPU colour")}\n") +
+            (v is null ? "" : $"Video   {v.Width}×{v.Height} {v.Codec.ToUpperInvariant()} · {(p.HardwareDecoder ?? "software decoding")} · {(_surface is GlVideoSurface ? "GPU colour" : "CPU colour")}\n") +
             (a is null ? "" : $"Audio   {a.Label}\n") +
-            $"Speed   {p.Speed:0.##}Ã—   Â·   {Ui.Time(p.Position)} / {Ui.Time(p.Duration)}\n" +
+            $"Speed   {p.Speed:0.##}×   ·   {Ui.Time(p.Position)} / {Ui.Time(p.Duration)}\n" +
             $"Folder  {Path.GetDirectoryName(_path)}";
     }
 

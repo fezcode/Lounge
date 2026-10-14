@@ -29,6 +29,9 @@ $preview = Join-Path $PSScriptRoot 'dist/preview'
 function Write-Step([string] $text) { Write-Host "`n$text" -ForegroundColor Cyan }
 
 function Invoke-Checked([string] $what, [scriptblock] $action) {
+    # Exit codes decide. Under 'Stop', PowerShell 5.1 turns any native stderr line (GTK's
+    # harmless GLib-GIO warning, say) into a terminating error once output is redirected.
+    $ErrorActionPreference = 'Continue'
     & $action
     if ($LASTEXITCODE -ne 0) { throw "$what failed (exit $LASTEXITCODE)" }
 }

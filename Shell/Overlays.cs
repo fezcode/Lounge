@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -131,7 +131,7 @@ public sealed class ModalLayer : Grid, IInputLayer
     public static ModalLayer Menu(string title, IReadOnlyList<MenuEntry> items, Action<int> done)
     {
         var list = new FocusList(horizontal: false, rememberIndex: true);
-        var panel = new StackPanel { Spacing = 6 };
+        var panel = new StackPanel { Spacing = 6, Margin = new Thickness(16, 8, 16, 24) };
         ModalLayer? layer = null;
         for (int i = 0; i < items.Count; i++)
         {

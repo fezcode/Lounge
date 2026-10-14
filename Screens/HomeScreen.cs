@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
@@ -360,7 +360,7 @@ public sealed class HomeScreen : Screen
                 Icons.Make(dest.Icon, 120, T.TextFaint, 1.2),
                 Ui.Text(dest.Title, T.Title, T.Text, T.TitleWeight),
                 Ui.Muted(dest.Subtitle ?? "", T.Body),
-                Ui.Muted("Press â’¶ to open", T.Caption));
+                Ui.Muted("Press Ⓐ to open", T.Caption));
             info.Margin = new Thickness(60, 220, 0, 0);
             stack.Children.Add(info);
         }

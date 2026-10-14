@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -40,7 +40,7 @@ public sealed class FilesScreen : Screen
     private readonly Stack<string> _cameFrom = new();
     private readonly TextBlock _path = Ui.Text("", T.Heading, T.Text, T.TitleWeight);
     private readonly TextBlock _status = Ui.Text("", T.Caption, T.TextMuted);
-    private readonly StackPanel _placesPanel = new() { Spacing = 4 };
+    private readonly StackPanel _placesPanel = new() { Spacing = 4, Margin = new Thickness(24, 12, 24, 24) };
     private readonly ContentControl _listHost = new();
     private readonly FocusList _root = new(horizontal: true);
     private readonly FocusList _placesFocus = new(horizontal: false, rememberIndex: true);
@@ -68,7 +68,7 @@ public sealed class FilesScreen : Screen
         var grid = Ui.Grid("400,*", "Auto,*,Auto");
         var title = _pick is null ? "Files" : _pick.Title;
         grid.Children.Add(Ui.V(6, Ui.Header(title, T.Title), _status).Margin(96, 56, 0, 24).Col(0, 2).Row(0));
-        grid.Children.Add(new ScrollViewer { Content = _placesPanel, VerticalScrollBarVisibility = ScrollBarVisibility.Hidden }.Margin(72, 0, 0, 0).Col(0).Row(1));
+        grid.Children.Add(new ScrollViewer { Content = _placesPanel, VerticalScrollBarVisibility = ScrollBarVisibility.Hidden }.Margin(48, 0, 0, 0).Col(0).Row(1));
         var right = Ui.Grid("*", "Auto,*");
         right.Children.Add(_path.Margin(0, 0, 96, 18).Row(0));
         right.Children.Add(_listHost.Row(1));
@@ -162,7 +162,7 @@ public sealed class FilesScreen : Screen
         else
         {
             var list = new FocusList(horizontal: false);
-            var panel = new StackPanel { Spacing = 4, Margin = new Thickness(0, 10, 80, 80) };
+            var panel = new StackPanel { Spacing = 4, Margin = new Thickness(24, 10, 80, 80) };
             foreach (var (label, icon, run) in actions) panel.Children.Add(ActionTile(label, icon, run, list, grid: false));
             foreach (var e in items) panel.Children.Add(ListRow(e, list));
             if (error is not null || items.Count == 0)
@@ -186,7 +186,7 @@ public sealed class FilesScreen : Screen
         if (_folder is not null) parts.Add($"{count} item{(count == 1 ? "" : "s")}");
         if (_selected.Count > 0) parts.Add($"{_selected.Count} selected");
         if (_clipboard.Count > 0) parts.Add($"{_clipboard.Count} to {(_clipboardCut ? "move" : "copy")}");
-        _status.Text = string.Join("  Â·  ", parts);
+        _status.Text = string.Join("  ·  ", parts);
     }
 
     private Control ActionTile(string label, string icon, Action run, FocusNode focus, bool grid)
@@ -375,7 +375,7 @@ public sealed class FilesScreen : Screen
         _busy = true;
         var dest = _folder;
         var progress = new Progress<FileProgress>(p =>
-            _status.Text = p.BytesTotal > 0 ? $"{(_clipboardCut ? "Moving" : "Copying")} {p.Current} Â· {p.BytesDone * 100 / Math.Max(1, p.BytesTotal)}%" : _status.Text);
+            _status.Text = p.BytesTotal > 0 ? $"{(_clipboardCut ? "Moving" : "Copying")} {p.Current} · {p.BytesDone * 100 / Math.Max(1, p.BytesTotal)}%" : _status.Text);
         var result = await FileOps.TransferAsync(_clipboard, dest, _clipboardCut, async path =>
         {
             var i = await L.Window.AskAsync($"{Path.GetFileName(path)} is already here", "What should Lounge do?",

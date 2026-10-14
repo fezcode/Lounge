@@ -376,6 +376,21 @@ public class AudioAndThemeTests
     }
 
     [Fact]
+    public void No_source_file_holds_double_encoded_text()
+    {
+        // UTF-8 read as Windows-1252 and saved again turns × into "Ã—" and · into "Â·";
+        // that shipped once in the player's badges and panels.
+        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".."));
+        foreach (var dir in new[] { "Core", "Media", "Shell", "Screens", "Controls", "Platform", "Agent" })
+            foreach (var f in Directory.EnumerateFiles(Path.Combine(root, dir), "*.cs", SearchOption.AllDirectories))
+            {
+                if (f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}") || f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}")) continue;
+                var text = File.ReadAllText(f);
+                Assert.DoesNotMatch("Ã|Â|â€|â–|â—|â†", text);
+            }
+    }
+
+    [Fact]
     public void Core_does_not_reference_avalonia()
     {
         var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".."));
