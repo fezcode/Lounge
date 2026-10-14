@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
@@ -62,6 +62,7 @@ public class App : Application
                         SelfCheck.Report("home", new
                         {
                             top = window.Top?.GetType().Name, focused = window.Top?.Focused is not null, theme = T.Def.Id,
+                            topmost = window.Topmost, windowState = window.WindowState.ToString(),
                             sound = L.Sound.Available, volume = L.Volume.Available, ffmpeg = Ff.Available, pads = L.Pad.ConnectedCount,
                         });
                         window.Exit();

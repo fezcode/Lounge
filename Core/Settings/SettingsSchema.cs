@@ -10,6 +10,7 @@ public static class K
     public const string Clock24h = "general.clock24h";
     public const string IdleDimMinutes = "general.idleDimMinutes";
     public const string LaunchAtLogin = "general.launchAtLogin";
+    public const string AlwaysOnTop = "general.alwaysOnTop";
 
     // Appearance
     public const string Theme = "appearance.theme";
@@ -204,6 +205,8 @@ public static class SettingsSchema
             Toggle(K.Clock24h, "General", "24-hour clock", true),
             Int(K.IdleDimMinutes, "General", "Dim when idle", 10, 0, 60, 1, " min", "Fades to a quiet clock after this long without input. 0 turns it off."),
             Toggle(K.LaunchAtLogin, "General", "Open Lounge when Windows starts", false),
+            Toggle(K.AlwaysOnTop, "General", "Keep Lounge on top, full screen", true,
+                "Nothing covers Lounge while you use it, and it stays full screen. Apps you open from Lounge still come to the front."),
 
             // ---- Appearance
             Choice(K.Theme, "Appearance", "Theme", "aurora", Themes, "Each theme has its own home layout, colours, sounds and ambient music."),

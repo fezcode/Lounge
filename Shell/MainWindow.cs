@@ -111,7 +111,12 @@ public sealed class MainWindow : Window
     {
         L.Router.Fired += HandleAction;
         L.Router.ConnectionChanged += OnPadConnection;
-        L.Router.Activity += () => NoteInput();
+        L.Router.Activity += () =>
+        {
+            NoteInput();
+            // On top but not focused (a click went to another window): the controller wakes it.
+            if (L.Dormant.Mode == ShellMode.Background && KeepsOnTop) ComeBack();
+        };
         L.Dormant.ModeChanged += _ => { UpdateContext(); UpdateAmbient(); };
         L.Dormant.LaunchedAppExited += () => { ComeBack(); Toast("Welcome back", "home"); };
         L.Settings.Changed += OnSetting;
@@ -505,6 +510,10 @@ public sealed class MainWindow : Window
 
     public void OnAppLaunched(Tile tile)
     {
+        // The app comes to the front now: Lounge stays off the top while it starts (then
+        // the dormant mode keeps it off while the app runs).
+        _handOverUntil = _clock.ElapsedMilliseconds + 10_000;
+        Topmost = false;
         L.Sound.SetAmbient(false);
         if (L.Player.IsPlaying) L.Player.Pause();
         var mouse = !tile.IsGame && tile.Kind != TileKind.Cogas;
@@ -523,9 +532,13 @@ public sealed class MainWindow : Window
         var pid = L.Dormant.LaunchedPid;
         var alive = pid is { } p && Win32.IsProcessAlive(p);
         L.Dormant.Observe(inFront, alive);
-        // Windows can knock a full-screen window back to normal when another app takes the
-        // front; whenever Lounge is in front again it goes back to full screen.
-        if (inFront && !_windowed && WindowState != WindowState.FullScreen) WindowState = WindowState.FullScreen;
+        // While Lounge is in charge it stays on top and full screen (Windows can knock a
+        // full-screen window back to normal when another app takes the front). Once an app
+        // is launched from Lounge, Lounge steps aside so that app can be in front.
+        var onTop = KeepsOnTop;
+        if (Topmost != onTop) Topmost = onTop;
+        if ((onTop || inFront) && !_windowed && L.Dormant.Mode != ShellMode.Dormant && WindowState != WindowState.FullScreen)
+            WindowState = WindowState.FullScreen;
 
         var idleMinutes = L.Settings.Int(K.IdleDimMinutes);
         var idleFor = _clock.ElapsedMilliseconds - _lastInput;
@@ -533,6 +546,14 @@ public sealed class MainWindow : Window
         if (idleMinutes > 0 && !_dim.Active && !watching && L.Dormant.Mode == ShellMode.Active && idleFor > idleMinutes * 60_000L)
             _dim.Set(true);
     }
+
+    private long _handOverUntil;
+
+    /// <summary>Lounge stays on top and full screen unless an app launched from it is
+    /// running (or just starting), Lounge is windowed, or the setting is off.</summary>
+    private bool KeepsOnTop =>
+        !_windowed && L.Settings.Bool(K.AlwaysOnTop) && L.Dormant.Mode != ShellMode.Dormant &&
+        _clock.ElapsedMilliseconds >= _handOverUntil;
 
     private void ReturnFromApp()
     {
@@ -543,6 +564,7 @@ public sealed class MainWindow : Window
             "close" => ReturnBehaviour.Close, "ask" => ReturnBehaviour.Ask, _ => ReturnBehaviour.Switch,
         };
         var pid = L.Dormant.LaunchedPid;
+        _handOverUntil = 0;
         ComeBack();
         L.Rumble(0.4f, 90);
         switch (behaviour)

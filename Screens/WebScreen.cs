@@ -29,7 +29,10 @@ public sealed class WebViewHost : NativeControlHost
 
     protected override IPlatformHandle CreateNativeControlCore(IPlatformHandle parent)
     {
-        _hwnd = CreateWindowEx(0, "Static", "", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN, 0, 0, 1, 1, parent.Handle, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+        // SS_BLACKRECT: any strip the page doesn't cover is black, never white.
+        _hwnd = CreateWindowEx(0, "Static", "", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | SS_BLACKRECT, 0, 0, 1, 1, parent.Handle, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+        _fit = new DispatcherTimer(TimeSpan.FromMilliseconds(200), DispatcherPriority.Background, (_, _) => Resize());
+        _fit.Start();
         _ = Init();
         return new PlatformHandle(_hwnd, "HWND");
     }
@@ -48,6 +51,7 @@ public sealed class WebViewHost : NativeControlHost
             s.AreDevToolsEnabled = false;
             s.IsZoomControlEnabled = false;
             if (!string.IsNullOrEmpty(_tile.UserAgent)) s.UserAgent = _tile.UserAgent;
+            if (SelfCheck.Active && Environment.GetEnvironmentVariable("LOUNGE_WEB_UA") is { Length: > 0 } ua) s.UserAgent = ua;
             Controller.ZoomFactor = L.Settings.Double(K.WebZoom);
             Resize();
             Ready?.Invoke(Controller);
@@ -64,28 +68,61 @@ public sealed class WebViewHost : NativeControlHost
         Resize();
     }
 
+    /// <summary>Avalonia sizes the host window to this control in real pixels; the page
+    /// fills exactly that. (Working the size out from Lounge's own UI scale fell short on
+    /// some screens and left a white strip on the right and bottom.) Checked on a timer
+    /// too, because full screen and DPI changes resize the window after layout.</summary>
     private void Resize()
     {
-        if (Controller is null) return;
-        var scale = VisualRoot?.RenderScaling ?? 1;
-        var origin = this.TranslatePoint(new Point(0, 0), (Visual)VisualRoot!) ?? new Point(0, 0);
-        _ = origin;
-        var w = (int)(Bounds.Width * L.Window.Scale * scale);
-        var h = (int)(Bounds.Height * L.Window.Scale * scale);
-        MoveWindow(_hwnd, 0, 0, w, h, true);
-        Controller.Bounds = new System.Drawing.Rectangle(0, 0, w, h);
+        if (Controller is null || _hwnd == IntPtr.Zero || !GetClientRect(_hwnd, out var host)) return;
+        // Only the part of the host that is inside Lounge's window: a screen that opened
+        // with a zoom can leave the host a few percent larger than the window.
+        var top = GetAncestor(_hwnd, 2);
+        var size = new System.Drawing.Rectangle(0, 0, host.Right, host.Bottom);
+        if (top != IntPtr.Zero && GetClientRect(top, out var win))
+        {
+            var origin = new POINT();
+            MapWindowPoints(_hwnd, top, ref origin, 1);
+            var left = Math.Max(0, -origin.X);
+            var topEdge = Math.Max(0, -origin.Y);
+            var right = Math.Min(host.Right, win.Right - origin.X);
+            var bottom = Math.Min(host.Bottom, win.Bottom - origin.Y);
+            if (right > left && bottom > topEdge) size = new System.Drawing.Rectangle(left, topEdge, right - left, bottom - topEdge);
+        }
+        if (size.Width <= 0 || size.Height <= 0 || Controller.Bounds == size) return;
+        Controller.Bounds = size;
     }
+
+    [StructLayout(LayoutKind.Sequential)] private struct POINT { public int X, Y; }
+    [DllImport("user32.dll")] private static extern int MapWindowPoints(IntPtr from, IntPtr to, ref POINT pt, int count);
+
+    private DispatcherTimer? _fit;
+
+    /// <summary>Self-check: the window, the page's host and the page, in real pixels.</summary>
+    public string Geometry()
+    {
+        GetClientRect(_hwnd, out var host);
+        GetClientRect(GetAncestor(_hwnd, 2), out var top);
+        var b = Controller?.Bounds ?? default;
+        return $"window {top.Right}x{top.Bottom}, host {host.Right}x{host.Bottom}, page {b.Width}x{b.Height} at {b.X},{b.Y}";
+    }
+
+    [DllImport("user32.dll")] private static extern IntPtr GetAncestor(IntPtr hwnd, int flags);
+
+    [StructLayout(LayoutKind.Sequential)] private struct RECT { public int Left, Top, Right, Bottom; }
+    [DllImport("user32.dll")] private static extern bool GetClientRect(IntPtr hwnd, out RECT rect);
 
     public void Focus2() => Controller?.MoveFocus(CoreWebView2MoveFocusReason.Programmatic);
 
     protected override void DestroyNativeControlCore(IPlatformHandle control)
     {
+        _fit?.Stop();
         Controller?.Close();
         Controller = null;
         DestroyWindow(_hwnd);
     }
 
-    private const int WS_CHILD = 0x40000000, WS_VISIBLE = 0x10000000, WS_CLIPCHILDREN = 0x02000000;
+    private const int WS_CHILD = 0x40000000, WS_VISIBLE = 0x10000000, WS_CLIPCHILDREN = 0x02000000, SS_BLACKRECT = 0x04;
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern IntPtr CreateWindowEx(int exStyle, string cls, string name, int style, int x, int y, int w, int h, IntPtr parent, IntPtr menu, IntPtr inst, IntPtr param);
@@ -105,6 +142,7 @@ public sealed class WebScreen : Screen
     private bool _drmChecked;
     private WebPad? _pad;
     private bool _reported;
+    private readonly List<string> _failedRequests = new();
     private bool _helped, _typing;
     private long _typeQuietUntil;
 
@@ -131,6 +169,16 @@ public sealed class WebScreen : Screen
         {
             var pad = new WebPad(c.CoreWebView2, pointer: _tile.AllowMouse);
             try { await pad.Install(); } catch (Exception) { }
+            if (SelfCheck.Active)
+            {
+                await c.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(
+                    "window.__loungeErrors = []; const ce = console.error; console.error = (...a) => { window.__loungeErrors.push('console: ' + a.map(String).join(' ').slice(0, 200)); ce.apply(console, a); };" +
+                    "addEventListener('error', e => window.__loungeErrors.push('error: ' + e.message)); addEventListener('unhandledrejection', e => window.__loungeErrors.push('rejection: ' + String(e.reason).slice(0, 200)));");
+                c.CoreWebView2.WebResourceResponseReceived += (_, a) =>
+                {
+                    if (a.Response.StatusCode >= 300 || Environment.GetEnvironmentVariable("LOUNGE_WEB_ALLREQ") is not null) _failedRequests.Add(DateTime.Now.ToString("ss.f ") + $"{a.Response.StatusCode} {a.Request.Method} {a.Request.Uri[..Math.Min(120, a.Request.Uri.Length)]}");
+                };
+            }
             _pad = pad;
             c.CoreWebView2.NavigationCompleted += (_, a) => Dispatcher.UIThread.Post(async () =>
             {
@@ -140,7 +188,7 @@ public sealed class WebScreen : Screen
                 _host.Focus2();
                 await pad.PageReady();
                 if (!_helped) { _helped = true; await pad.Hint(pad.HelpText, 9000); }
-                if (SelfCheck.Active) _ = ReportSelfCheck(c, a.IsSuccess);
+                if (SelfCheck.Active) _ = ReportSelfCheck(c, a.IsSuccess).ContinueWith(r => { if (r.Exception is { } x) { SelfCheck.Report("web-error", new { error = x.ToString() }); Dispatcher.UIThread.Post(() => L.Window.Exit()); } });
             });
             c.CoreWebView2.NewWindowRequested += (_, a) => { a.Handled = true; c.CoreWebView2.Navigate(a.Uri); };
             // A page that closes itself (YouTube TV's "Exit") brings Lounge back.
@@ -208,20 +256,47 @@ public sealed class WebScreen : Screen
     {
         if (_reported) return;
         _reported = true;
-        await Task.Delay(6000);   // TV apps keep building after the load event
+        await Task.Delay(int.TryParse(Environment.GetEnvironmentVariable("LOUNGE_WEB_WAIT"), out var wait) ? wait : 6000);   // TV apps keep building after the load event
         string Eval(string r) => r.Trim('"');
         var pad = _pad!;
         // Controller input reaches the page as trusted events (not via the page's own gamepad code).
         await c.CoreWebView2.ExecuteScriptAsync("window.__loungeKeys = []; addEventListener('keydown', e => window.__loungeKeys.push(e.key + (e.isTrusted ? '' : '?')), true); window.__loungeClicks = 0; addEventListener('click', e => { if (e.isTrusted) window.__loungeClicks++; }, true);");
         var focusBefore = Eval(await c.CoreWebView2.ExecuteScriptAsync("(document.activeElement && (document.activeElement.tagName + '.' + document.activeElement.className)).slice(0, 80)"));
-        foreach (var k in new[] { "ArrowDown", "ArrowRight", "ArrowRight" }) { await pad.Key(k); await Task.Delay(500); }
+        if (Environment.GetEnvironmentVariable("LOUNGE_WEB_KEYS") is null)
+            foreach (var k in new[] { "ArrowDown", "ArrowRight", "ArrowRight" }) { await pad.Key(k); await Task.Delay(500); }
         var focusAfter = Eval(await c.CoreWebView2.ExecuteScriptAsync("(document.activeElement && (document.activeElement.tagName + '.' + document.activeElement.className)).slice(0, 80)"));
         var keys = Eval(await c.CoreWebView2.ExecuteScriptAsync("window.__loungeKeys.join(' ')"));
         pad.MovePointer(5, 5);
         await pad.Click();
         await Task.Delay(300);
         var clicks = Eval(await c.CoreWebView2.ExecuteScriptAsync("String(window.__loungeClicks)"));
+        var walk = new List<string>();
+        // LOUNGE_WEB_KEYS="ArrowDown,Enter,wait:8000,...": walk the page like a person would first.
+        foreach (var step in (Environment.GetEnvironmentVariable("LOUNGE_WEB_KEYS") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries))
+        {
+            _failedRequests.Add(DateTime.Now.ToString("ss.f ") + "---- " + step);
+            if (step.StartsWith("wait:")) await Task.Delay(int.Parse(step[5..]));
+            else if (step.StartsWith("hash:")) { await c.CoreWebView2.ExecuteScriptAsync($"location.hash = {System.Text.Json.JsonSerializer.Serialize(step[5..])}"); await Task.Delay(700); }
+            else if (step.StartsWith("hold:")) { var parts = step.Split(':'); await pad.Key(parts[2], int.Parse(parts[1])); await Task.Delay(700); }
+            else if (step == "jsclick") { await c.CoreWebView2.ExecuteScriptAsync("(document.querySelector('.zylon-focus') || document.activeElement).click()"); await Task.Delay(700); }
+            else if (step == "mouse")
+            {
+                var r = Eval(await c.CoreWebView2.ExecuteScriptAsync("(() => { const b = (document.querySelector('.zylon-focus') || document.activeElement).getBoundingClientRect(); return (b.left + b.width / 2) + ',' + (b.top + b.height / 2); })()")).Split(',');
+                pad.MovePointer(double.Parse(r[0], System.Globalization.CultureInfo.InvariantCulture) - 10000, double.Parse(r[1], System.Globalization.CultureInfo.InvariantCulture) - 10000);
+                pad.MovePointer(double.Parse(r[0], System.Globalization.CultureInfo.InvariantCulture), double.Parse(r[1], System.Globalization.CultureInfo.InvariantCulture));
+                await Task.Delay(300);
+                await pad.Click();
+                await Task.Delay(700);
+            }
+            else { await pad.Key(step); await Task.Delay(700); }
+            walk.Add(step + " -> " + Eval(await c.CoreWebView2.ExecuteScriptAsync("(() => { const all = document.querySelectorAll('.zylon-focus'); const e = all.length ? all[all.length - 1] : document.activeElement; return e ? (e.innerText || e.tagName).replace(/\\s+/g, ' ').slice(0, 40) : '' })()")));
+        }
         var injected = Eval(await c.CoreWebView2.ExecuteScriptAsync("String(!!window.__lounge)"));
+        // Whether a video on the page is actually playing (not just the page loading).
+        var video = Eval(await c.CoreWebView2.ExecuteScriptAsync(
+            "(() => { const v = document.querySelector('video'); if (!v) return 'no video element'; " +
+            "return `paused=${v.paused} time=${v.currentTime.toFixed(1)} ready=${v.readyState} err=${v.error ? v.error.code + ':' + v.error.message : 'none'} src=${(v.currentSrc || '').slice(0, 40)}`; })()"));
+        var text = Eval(await c.CoreWebView2.ExecuteScriptAsync("(document.body ? document.body.innerText : '').replace(/\\s+/g, ' ').slice(0, 300)"));
         await pad.Hint(pad.HelpText, 9000);
         await Task.Delay(500);
         using (var png = File.Create(Lounge.Shell.SelfCheck.PathFor("web.png")))
@@ -233,7 +308,8 @@ public sealed class WebScreen : Screen
         Lounge.Shell.SelfCheck.Report("web", new
         {
             loaded, title, gamepadApi, padsVisibleToPage = pads, drm,
-            pointerMode = pad.PointerMode, injected, keysReceived = keys, focusBefore, focusAfter, trustedClicks = clicks,
+            pointerMode = pad.PointerMode, injected, keysReceived = keys, focusBefore, focusAfter, trustedClicks = clicks, video, text, walk, geometry = _host.Geometry(), failedRequests = _failedRequests.ToArray().TakeLast(60).ToList(),
+            errors = Eval(await c.CoreWebView2.ExecuteScriptAsync("(window.__loungeErrors || []).slice(-15).join(' | ')")),
             userAgent = Eval(await c.CoreWebView2.ExecuteScriptAsync("navigator.userAgent")),
             zoom = c.ZoomFactor,
         });

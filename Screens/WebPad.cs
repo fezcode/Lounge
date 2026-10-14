@@ -123,14 +123,20 @@ public sealed class WebPad
         ["Enter"] = ("Enter", 13, "\r"), ["Escape"] = ("Escape", 27, null), ["Backspace"] = ("Backspace", 8, null),
     };
 
-    public Task Key(string key)
+    /// <summary>How long a key or click is held. YouTube TV ignores Enter on some buttons
+    /// ("Watch as guest") when down and up arrive in the same frame, as a real remote never does.</summary>
+    public const int PressMs = 70;
+
+    /// <summary>A key press with the key held for <paramref name="holdMs"/>, like a real button.</summary>
+    public async Task Key(string key, int holdMs = PressMs)
     {
         var (code, vk, text) = Keys[key];
         object down = text is null
             ? new { type = "rawKeyDown", key, code, windowsVirtualKeyCode = vk, nativeVirtualKeyCode = vk }
             : new { type = "keyDown", key, code, windowsVirtualKeyCode = vk, nativeVirtualKeyCode = vk, text, unmodifiedText = text };
-        return Send("Input.dispatchKeyEvent", down)
-            .ContinueWith(_ => Send("Input.dispatchKeyEvent", new { type = "keyUp", key, code, windowsVirtualKeyCode = vk, nativeVirtualKeyCode = vk })).Unwrap();
+        await Send("Input.dispatchKeyEvent", down);
+        if (holdMs > 0) await Task.Delay(holdMs);
+        await Send("Input.dispatchKeyEvent", new { type = "keyUp", key, code, windowsVirtualKeyCode = vk, nativeVirtualKeyCode = vk });
     }
 
     public Task InsertText(string text) => Send("Input.insertText", new { text });
@@ -160,6 +166,7 @@ public sealed class WebPad
     {
         _ = _web.ExecuteScriptAsync("window.__lounge && window.__lounge.press(true)");
         await Send("Input.dispatchMouseEvent", new { type = "mousePressed", x = _x, y = _y, button = "left", buttons = 1, clickCount = 1 });
+        await Task.Delay(PressMs);
         await Send("Input.dispatchMouseEvent", new { type = "mouseReleased", x = _x, y = _y, button = "left", buttons = 0, clickCount = 1 });
         _ = _web.ExecuteScriptAsync("window.__lounge && window.__lounge.press(false)");
     }
