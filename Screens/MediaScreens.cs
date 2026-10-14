@@ -31,7 +31,8 @@ public sealed class NowPlayingScreen : Screen
     private readonly StackPanel _queue = new() { Spacing = 4 };
     private readonly DispatcherTimer _timer;
     private Card? _shuffle, _repeat;
-    private string? _shownPath;
+    // Not null: the first refresh must fill the cover and title even when nothing plays.
+    private string? _shownPath = "\0";
 
     public override string Context => "Player";
     public override string Title => "Now Playing";

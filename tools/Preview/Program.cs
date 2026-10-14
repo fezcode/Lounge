@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Layout;
@@ -94,6 +94,7 @@ internal static class Program
                 Show(new CollectionScreen(L.Library.VideoCollections()[0]), $"{t}-collection");
                 Show(new MusicScreen(), $"{t}-music");
                 Show(new AlbumScreen(L.Library.Albums()[0]), $"{t}-album");
+                Show(new NowPlayingScreen(), $"{t}-nowplaying");
                 Show(new AppsScreen(), $"{t}-apps");
                 Show(new RemoteScreen(), $"{t}-remote");
 
