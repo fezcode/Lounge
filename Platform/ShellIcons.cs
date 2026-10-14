@@ -77,6 +77,29 @@ public static class ShellIcons
     [DllImport("user32.dll")] private static extern IntPtr GetDC(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern int ReleaseDC(IntPtr hwnd, IntPtr dc);
 
+    /// <summary>Microsoft Store apps from the shell's AppsFolder: (display name, AppUserModelID).
+    /// Must run on an STA thread (the UI thread is one).</summary>
+    public static IReadOnlyList<(string Name, string Aumid)> StoreApps()
+    {
+        var list = new List<(string, string)>();
+        try
+        {
+            var type = Type.GetTypeFromProgID("Shell.Application");
+            if (type is null) return list;
+            dynamic shell = Activator.CreateInstance(type)!;
+            dynamic folder = shell.NameSpace("shell:AppsFolder");
+            foreach (dynamic item in folder.Items())
+            {
+                string name = item.Name;
+                string path = item.Path;
+                // Packaged apps are "Family!App"; desktop programs are paths or GUIDs.
+                if (path.Contains('!') && !path.Contains('\\')) list.Add((name, path));
+            }
+        }
+        catch (Exception e) when (e is COMException or InvalidCastException or Microsoft.CSharp.RuntimeBinder.RuntimeBinderException) { }
+        return list.OrderBy(x => x.Item1, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
     /// <summary>Start Menu shortcuts (user and all users), for the "Add app" picker.</summary>
     public static IReadOnlyList<(string Name, string Path)> StartMenuApps()
     {

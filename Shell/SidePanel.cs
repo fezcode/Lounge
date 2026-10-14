@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
@@ -141,7 +141,7 @@ public sealed class SidePanel : Grid, IInputLayer
         _isClosed = true;
         L.Play(UiSound.Back);
         _in.To(0);
-        DispatcherTimer.RunOnce(() => L.Window.RemoveOverlay(this), TimeSpan.FromMilliseconds(240));
+        L.Window.DismissOverlay(this, 240);
         _closed?.Invoke();
     }
 }

@@ -70,7 +70,7 @@ public static class HomeModel
 
     private static HomeEntry AddFolderEntry(string kind) => new(
         kind == "video" ? "Add a video folder" : "Add a music folder",
-        "Pick it in Files, then press View",
+        "Choose one in Files",
         null, "library-add", "#3A3A4A",
         () => L.Window.Push(new FilesScreen(pickFor: kind == "video" ? K.VideoRoots : K.MusicRoots)));
 

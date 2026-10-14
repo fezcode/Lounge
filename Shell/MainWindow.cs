@@ -84,29 +84,41 @@ public sealed class MainWindow : Window
         Relayout();
 
         KeyDown += OnKey;
-        PointerMoved += (_, _) => Cursor = Cursor.Default;
+        PointerMoved += (_, _) => { if (_pointerHidden) { _pointerHidden = false; Cursor = Cursor.Default; } };
         Opened += (_, _) =>
         {
             _hwnd = TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
             if (!NoActivate) Win32.BringToFront(_hwnd);
         };
 
-        _pump = new DispatcherTimer(TimeSpan.FromMilliseconds(8), DispatcherPriority.Input, (_, _) => Pump());
-        _watch = new DispatcherTimer(TimeSpan.FromMilliseconds(250), DispatcherPriority.Background, (_, _) => Watch());
+        // Not the (interval, priority, callback) constructor: that one starts the timer.
+        _pump = new DispatcherTimer(DispatcherPriority.Input) { Interval = TimeSpan.FromMilliseconds(8) };
+        _pump.Tick += (_, _) => Pump();
+        _watch = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(250) };
+        _watch.Tick += (_, _) => Watch();
         if (!L.Preview)
         {
-            L.Router.Fired += HandleAction;
-            L.Router.ConnectionChanged += OnPadConnection;
-            L.Router.Activity += () => NoteInput();
-            L.Dormant.ModeChanged += _ => { UpdateContext(); UpdateAmbient(); };
-            L.Dormant.LaunchedAppExited += () => { ComeBack(); Toast("Welcome back", "home"); };
-            L.Settings.Changed += OnSetting;
-            L.Player.StateChanged += _ => Dispatcher.UIThread.Post(() => { UpdateAmbient(); UpdateNowPlaying(); });
+            Wire();
             _pump.Start();
             _watch.Start();
         }
         Closing += (_, e) => { if (!_exiting) { e.Cancel = true; Exit(); } };
     }
+
+    /// <summary>Connects the window to input, settings and the player. The app does this
+    /// at startup; headless checks call it to drive the real flows without timers.</summary>
+    public void Wire()
+    {
+        L.Router.Fired += HandleAction;
+        L.Router.ConnectionChanged += OnPadConnection;
+        L.Router.Activity += () => NoteInput();
+        L.Dormant.ModeChanged += _ => { UpdateContext(); UpdateAmbient(); };
+        L.Dormant.LaunchedAppExited += () => { ComeBack(); Toast("Welcome back", "home"); };
+        L.Settings.Changed += OnSetting;
+        L.Player.StateChanged += _ => Dispatcher.UIThread.Post(() => { UpdateAmbient(); UpdateNowPlaying(); });
+    }
+
+    public IReadOnlyList<Control> Overlays => _overlayStack;
 
     // ------------------------------------------------------------------ layout
 
@@ -239,6 +251,16 @@ public sealed class MainWindow : Window
         UpdateContext();
     }
 
+    /// <summary>Takes a closing layer out of the input stack now (the next press goes to
+    /// whatever is underneath) and out of the visual tree once its fade has played.</summary>
+    public void DismissOverlay(Control layer, int fadeMs = 240)
+    {
+        _overlayStack.Remove(layer);
+        CoverNative();
+        UpdateContext();
+        DispatcherTimer.RunOnce(() => _overlays.Children.Remove(layer), TimeSpan.FromMilliseconds(fadeMs));
+    }
+
     /// <summary>A web page is a native window drawn above everything Avalonia paints, so
     /// it steps aside while a menu, dialog or keyboard is open over it.</summary>
     private void CoverNative()
@@ -318,8 +340,15 @@ public sealed class MainWindow : Window
     private void NoteInput()
     {
         _lastInput = _clock.ElapsedMilliseconds;
-        if (Cursor != Cursor.Parse("None") && !_cursorMode) Cursor = new Cursor(StandardCursorType.None);
+        // The mouse pointer hides while the controller is in use and returns when the mouse moves.
+        if (!_pointerHidden && !_cursorMode && !L.Preview)
+        {
+            _pointerHidden = true;
+            Cursor = new Cursor(StandardCursorType.None);
+        }
     }
+
+    private bool _pointerHidden;
 
     private void OnPadConnection(bool connected)
     {

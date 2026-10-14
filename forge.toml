@@ -1,0 +1,117 @@
+[app]
+name    = "Lounge"
+version = "1.0.0"
+id      = "io.fezcode.lounge"
+icon    = "Assets/Lounge.ico"
+
+[meta]
+publisher = "Samil Bulbul"
+comments  = "Controller-first media center for Windows"
+
+[ui]
+# huh is the only shipped theme that asks the engine for a real Mica backdrop,
+# so the wizard picks up the desktop tint behind it instead of painting its own
+# ground. It lays the steps out as a rail down the left.
+theme        = "huh"
+window_title = "Lounge Setup"
+
+[install]
+default_dir = "${LOCALAPPDATA}/Programs/Lounge"
+
+# Everything under ${INSTALLDIR} is app payload and goes on uninstall. Settings,
+# button mapping, tiles, history and the library cache live in
+# %APPDATA%\fezcode\Lounge and are only removed when the user ticks "Also remove
+# my settings and data". The app writes the two Run values itself (the agent at
+# login, and Lounge at login when the user asks), so uninstall removes them.
+[uninstall]
+settings_dirs   = ["${APPDATA}/fezcode/Lounge"]
+registry_values = [
+    "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\LoungeAgent",
+    "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\Lounge",
+]
+
+# Step titles double as the labels in huh's left rail, so they are short. The
+# rail already heads itself with the app name and version, and each body carries
+# the version where it matters; version.ps1 rewrites those on a bump. Do not put
+# a version number in a comment here - version.ps1 will not rewrite it and it
+# will drift.
+[[steps]]
+type  = "welcome"
+title = "Welcome"
+body  = "This wizard will install Lounge 1.0.0 on your computer.\n\nLounge turns this PC into a living-room media center you drive entirely with an Xbox controller: films, shows and music in its own player, streaming sites, your apps and games, and a file explorer, all from the couch.\n\nClick Next to continue."
+
+[[steps]]
+type  = "license"
+title = "License"
+body  = "Please review the license terms below before continuing the installation."
+file  = "LICENSE.txt"
+
+[[steps]]
+type  = "folder"
+title = "Location"
+body  = "Choose where to install Lounge 1.0.0."
+
+[[steps]]
+type  = "shortcuts"
+title = "Shortcuts"
+body  = "Check the items you would like the installer to perform."
+
+[[steps]]
+type  = "install"
+title = "Installing"
+body  = "Copying files to your system."
+
+[[steps]]
+type  = "finish"
+title = "Finished"
+body  = "Lounge has been installed successfully.\n\nPick up your controller: A selects, B goes back, Menu opens settings, and holding View takes you home. When a controller connects later, Lounge will offer to open.\n\nClick Finish to close the installer."
+
+[[steps.launches]]
+kind    = "app"
+target  = "${INSTALLDIR}/Lounge.exe"
+label   = "Run Lounge after install"
+checked = true
+
+[[dirs]]
+# installer.ps1 supports win-x64 only; keep this aligned with that payload.
+src = "dist/Lounge"
+dst = "${INSTALLDIR}"
+
+[[files]]
+src = "LICENSE.txt"
+dst = "${INSTALLDIR}/LICENSE.txt"
+
+# Shortcut icons point at the executable, which carries the icon as a resource.
+# Do not add a [[files]] entry for Assets/Lounge.ico to copy an app.ico beside
+# it: Forge stages [app] icon first as bundle-only and then dedups [[files]] by
+# source path, so the copy is silently dropped and the shortcuts end up pointing
+# at a file that was never written.
+[[shortcuts]]
+target   = "${INSTALLDIR}/Lounge.exe"
+location = "${DESKTOP}/Lounge.lnk"
+name     = "Lounge"
+icon     = "${INSTALLDIR}/Lounge.exe"
+label    = "Create Desktop Shortcut"
+optional = true
+default  = true
+
+[[shortcuts]]
+target   = "${INSTALLDIR}/Lounge.exe"
+location = "${STARTMENU}/Lounge/Lounge.lnk"
+name     = "Lounge"
+icon     = "${INSTALLDIR}/Lounge.exe"
+label    = "Create Start Menu Entry"
+optional = true
+default  = true
+
+[[registry]]
+hive  = "HKCU"
+key   = "Software\\fezcode\\Lounge"
+value = "InstallDir"
+data  = "${INSTALLDIR}"
+
+[[registry]]
+hive  = "HKCU"
+key   = "Software\\fezcode\\Lounge"
+value = "Version"
+data  = "1.0.0"

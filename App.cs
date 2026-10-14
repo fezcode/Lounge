@@ -27,6 +27,10 @@ public class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
+            Log.Write($"Lounge {Product.Version} starting");
+            AppDomain.CurrentDomain.UnhandledException += (_, e) => Log.Error("unhandled", (Exception)e.ExceptionObject);
+            TaskScheduler.UnobservedTaskException += (_, e) => { Log.Error("task", e.Exception); e.SetObserved(); };
+            Dispatcher.UIThread.UnhandledException += OnUiException;
             StartServices();
             MainWindow.NoActivate = StartArgs.Contains("--no-activate");
             var window = new MainWindow(windowed: StartArgs.Contains("--windowed"));
@@ -45,6 +49,23 @@ public class App : Application
             if (Instance is not null) Instance.Activated += args => Dispatcher.UIThread.Post(() => window.OnActivated(args));
             window.Opened += (_, _) =>
             {
+                if (SelfCheck.Active && !StartArgs.Contains("--play"))
+                    DispatcherTimer.RunOnce(() =>
+                    {
+                        // Real-window check of a normal start: capture home, report, exit.
+                        var size = new PixelSize((int)window.Bounds.Width, (int)window.Bounds.Height);
+                        using (var rtb = new Avalonia.Media.Imaging.RenderTargetBitmap(size))
+                        {
+                            rtb.Render(window);
+                            rtb.Save(SelfCheck.PathFor("home.png"));
+                        }
+                        SelfCheck.Report("home", new
+                        {
+                            top = window.Top?.GetType().Name, focused = window.Top?.Focused is not null, theme = T.Def.Id,
+                            sound = L.Sound.Available, volume = L.Volume.Available, ffmpeg = Ff.Available, pads = L.Pad.ConnectedCount,
+                        });
+                        window.Exit();
+                    }, TimeSpan.FromSeconds(4));
                 window.HandleArgs(StartArgs);
                 if (L.Settings.Bool(K.ScanOnStartup)) LibraryService.ScanSoon(TimeSpan.FromSeconds(2));
                 RegisterAgent();
@@ -54,6 +75,25 @@ public class App : Application
     }
 
     private static string? _keymapNotice;
+    private static bool _crashDialogOpen;
+
+    /// <summary>Something went wrong on the UI thread: log it, keep Lounge running, and
+    /// offer a controller-friendly restart instead of vanishing.</summary>
+    private static void OnUiException(object? sender, DispatcherUnhandledExceptionEventArgs e)
+    {
+        Log.Error("ui", e.Exception);
+        e.Handled = true;
+        if (_crashDialogOpen || L.Window is null) return;
+        _crashDialogOpen = true;
+        L.Window.Ask("Something went wrong", "Lounge ran into a problem and noted it in its log. You can carry on, or restart Lounge.",
+            ["Carry on", "Restart Lounge"], 0, i =>
+            {
+                _crashDialogOpen = false;
+                if (i != 1 || Environment.ProcessPath is not { } exe) return;
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exe, "--new-instance") { UseShellExecute = true });
+                L.Window.Exit();
+            }, "warning");
+    }
 
     private static void StartServices()
     {

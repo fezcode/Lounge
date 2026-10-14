@@ -106,7 +106,16 @@ public sealed unsafe class MediaPlayer : IDisposable
     /// with <see cref="LastError"/> set when the file cannot be played.</summary>
     public bool Open(string path, PlayerOptions options, double startAt = 0)
     {
-        Close();
+        // Opens and closes never overlap: a second open (next episode, a renderer switch)
+        // waits for the first instead of tearing down FFmpeg state under it.
+        lock (_lifecycle) return OpenLocked(path, options, startAt);
+    }
+
+    private readonly object _lifecycle = new();
+
+    private bool OpenLocked(string path, PlayerOptions options, double startAt)
+    {
+        CloseLocked();
         _opts = options;
         _path = path;
         SetState(PlayerState.Opening);
@@ -256,6 +265,11 @@ public sealed unsafe class MediaPlayer : IDisposable
     }
 
     public void Close()
+    {
+        lock (_lifecycle) CloseLocked();
+    }
+
+    private void CloseLocked()
     {
         _stop = true;
         _vq.Close(); _aq.Close();

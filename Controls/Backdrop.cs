@@ -40,7 +40,8 @@ public sealed class Backdrop : Grid
         _fadeA = new Spring(0, v => _artA.Opacity = v, 120, 22);
         _fadeB = new Spring(0, v => _artB.Opacity = v, 120, 22);
         _wallFade = new Spring(0, v => _wallpaper.Opacity = v, 120, 22);
-        _timer = new DispatcherTimer(TimeSpan.FromMilliseconds(40), DispatcherPriority.Background, (_, _) => Step());
+        _timer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(40) };
+        _timer.Tick += (_, _) => Step();
         PropertyChanged += (_, e) =>
         {
             if (e.Property == IsVisibleProperty) UpdateTimer();

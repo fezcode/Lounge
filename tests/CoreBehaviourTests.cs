@@ -345,6 +345,25 @@ public class AudioAndThemeTests
     }
 
     [Fact]
+    public void App_icon_is_a_well_formed_multi_size_ico()
+    {
+        // A broken .ico crashes Avalonia's default-icon fallback at startup, so check it here.
+        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".."));
+        var b = File.ReadAllBytes(Path.Combine(root, "Assets", "Lounge.ico"));
+        Assert.Equal(1, BitConverter.ToUInt16(b, 2));
+        var n = BitConverter.ToUInt16(b, 4);
+        Assert.True(n >= 4, "expected several sizes");
+        for (int i = 0; i < n; i++)
+        {
+            var size = BitConverter.ToUInt32(b, 6 + 16 * i + 8);
+            var offset = BitConverter.ToUInt32(b, 6 + 16 * i + 12);
+            Assert.True(size > 100, $"entry {i} is {size} bytes");
+            Assert.True(offset + size <= b.Length, $"entry {i} runs past the end");
+            Assert.Equal(new byte[] { 0x89, 0x50, 0x4E, 0x47 }, b.Skip((int)offset).Take(4).ToArray());
+        }
+    }
+
+    [Fact]
     public void Core_does_not_reference_avalonia()
     {
         var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".."));

@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>Lounge.Agent</RootNamespace>
+    <AssemblyName>LoungeAgent</AssemblyName>
+    <Version>1.0.0</Version>
+    <Company>Fezcode</Company>
+    <Product>Lounge</Product>
+    <DebugType>embedded</DebugType>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ApplicationIcon>../Assets/Lounge.ico</ApplicationIcon>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../Core/Product.cs" Link="Core/Product.cs" />
+    <Compile Include="../Core/AppPaths.cs" Link="Core/AppPaths.cs" />
+    <Compile Include="../Core/AtomicFile.cs" Link="Core/AtomicFile.cs" />
+    <Compile Include="../Core/Settings/*.cs" LinkBase="Core/Settings" />
+    <Compile Include="../Core/Input/PadState.cs" Link="Core/Input/PadState.cs" />
+    <Compile Include="../Core/Input/XInputPad.cs" Link="Core/Input/XInputPad.cs" />
+    <Compile Include="../Platform/Win32.cs" Link="Platform/Win32.cs" />
+  </ItemGroup>
+</Project>

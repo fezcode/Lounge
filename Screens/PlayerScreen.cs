@@ -253,11 +253,14 @@ public sealed class PlayerScreen : Screen
         ShowOsd();
     }
 
+    private Task _opening = Task.CompletedTask;
+
     private void Reopen(PlayerOptions opts, double at)
     {
         var path = _path;
         _framesSeen = false;
-        _ = Task.Run(() =>
+        // Each open runs after the previous one finishes, in order.
+        _opening = _opening.ContinueWith(_ =>
         {
             var ok = L.Player.Open(path, opts, at);
             Dispatcher.UIThread.Post(() =>

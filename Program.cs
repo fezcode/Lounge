@@ -15,6 +15,8 @@ internal static class Program
     public static int Main(string[] args)
     {
         Args = args;
+        // A GUI exe has no console; borrow the terminal's when asked for text.
+        if (args.Any(a => a is "-v" or "--version" or "-h" or "--help" or "--selftest")) AttachConsole(-1);
         App.StartArgs = args;
         if (args.Contains("--version") || args.Contains("-v"))
         {
@@ -39,6 +41,9 @@ internal static class Program
         return 0;
     }
 
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+    private static extern bool AttachConsole(int pid);
+
     public static AppBuilder BuildAvaloniaApp() =>
         AppBuilder.Configure<App>()
             .UsePlatformDetect()
@@ -56,6 +61,7 @@ internal static class Program
     {
         var failures = new List<string>();
         var dir = Path.Combine(Path.GetTempPath(), "lounge-selftest-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
         Environment.SetEnvironmentVariable("LOUNGE_DATA", dir);
         try
         {

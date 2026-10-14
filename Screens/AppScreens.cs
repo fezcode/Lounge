@@ -87,6 +87,19 @@ public sealed class AddAppScreen : BrowseScreen
             panel.Children.Add(card);
             list.Add(card.Item);
         }
+
+        var store = ShellIcons.StoreApps();
+        if (store.Count > 0)
+        {
+            panel.Children.Add(Ui.Text("MICROSOFT STORE APPS", T.Caption, T.TextMuted, FontWeight.Bold, letterSpacing: 3).Margin(24, 26, 0, 8));
+            foreach (var (name, aumid) in store)
+            {
+                var card = Row(name, "Microsoft Store", null);
+                card.Item.Activate = () => Added(new Tile { Kind = TileKind.StoreApp, Name = name, Target = aumid });
+                panel.Children.Add(card);
+                list.Add(card.Item);
+            }
+        }
         Body.Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Hidden };
         UseScope(list);
     }

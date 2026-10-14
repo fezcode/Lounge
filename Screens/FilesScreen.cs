@@ -113,7 +113,7 @@ public sealed class FilesScreen : Screen
     private void Navigate(string? folder, bool intoList = false, string? focusName = null)
     {
         _folder = folder;
-        _focusName = focusName;
+        _focusName = focusName ?? "";   // empty: a fresh folder starts at the top
         _selected.Clear();
         Watch();
         Load();
@@ -122,6 +122,7 @@ public sealed class FilesScreen : Screen
 
     private void Load()
     {
+        _focusName ??= Current?.Name;
         _entries.Clear();
         _checks.Clear();
         var gridView = L.Settings.String(K.FilesView) == "grid";
@@ -174,11 +175,9 @@ public sealed class FilesScreen : Screen
         _listFocus = _root.Add(focus);
         _listHost.Content = view;
         RefreshFocus();
-        if (_focusName is not null && _entries.FirstOrDefault(kv => kv.Value.Name.Equals(_focusName, StringComparison.OrdinalIgnoreCase)).Key is { } again)
-        {
+        if (!string.IsNullOrEmpty(_focusName) && _entries.FirstOrDefault(kv => kv.Value.Name.Equals(_focusName, StringComparison.OrdinalIgnoreCase)).Key is { } again)
             FocusItem(again);
-            _focusName = null;
-        }
+        _focusName = null;
     }
 
     private void UpdateStatus(int count)

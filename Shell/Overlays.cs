@@ -179,7 +179,7 @@ public sealed class ModalLayer : Grid, IInputLayer
         if (_closed) return;
         _closed = true;
         _in.To(0);
-        DispatcherTimer.RunOnce(() => L.Window.RemoveOverlay(this), TimeSpan.FromMilliseconds(220));
+        L.Window.DismissOverlay(this, 220);
         _done(result);
     }
 

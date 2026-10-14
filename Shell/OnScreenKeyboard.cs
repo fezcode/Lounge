@@ -287,7 +287,7 @@ public sealed class OnScreenKeyboard : Grid, IInputLayer
         _closed = true;
         _blink.Stop();
         _in.To(0);
-        DispatcherTimer.RunOnce(() => L.Window.RemoveOverlay(this), TimeSpan.FromMilliseconds(220));
+        L.Window.DismissOverlay(this, 220);
         _done(result);
     }
 

@@ -42,25 +42,69 @@ public static class ImageCache
         }
     }
 
-    public static async Task<Bitmap?> LoadAsync(string? path, int decodeWidth)
+    private static readonly Dictionary<string, TaskCompletionSource<Bitmap?>> InFlight = new();
+    private static readonly Stack<(string Path, int Width, string Key)> Pending = new();
+    private static int _workers;
+    private const int MaxWorkers = 2;
+
+    /// <summary>True while pictures are still queued or decoding.</summary>
+    public static bool Busy { get { lock (Gate) return InFlight.Count > 0; } }
+
+    /// <summary>Loads (or joins the load already queued for) a picture. Two background
+    /// decoders work newest-first, so the screen you are looking at fills in before
+    /// anything you scrolled past.</summary>
+    public static Task<Bitmap?> LoadAsync(string? path, int decodeWidth)
     {
-        if (string.IsNullOrEmpty(path)) return null;
+        if (string.IsNullOrEmpty(path)) return Task.FromResult<Bitmap?>(null);
         var key = $"{path}|{decodeWidth}";
-        if (TryGet(key) is { } hit) return hit;
-        try
+        if (TryGet(key) is { } hit) return Task.FromResult<Bitmap?>(hit);
+        lock (Gate)
         {
-            var bmp = await Task.Run(() =>
+            if (InFlight.TryGetValue(key, out var running)) return running.Task;
+            var tcs = new TaskCompletionSource<Bitmap?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            InFlight[key] = tcs;
+            Pending.Push((path, decodeWidth, key));
+            if (_workers < MaxWorkers)
             {
-                if (!File.Exists(path)) return null;
-                using var s = File.OpenRead(path);
-                return Bitmap.DecodeToWidth(s, decodeWidth, BitmapInterpolationMode.MediumQuality);
-            });
-            if (bmp is not null) Put(key, bmp);
-            return bmp;
+                _workers++;
+                new Thread(Work) { IsBackground = true, Name = "image-decode", Priority = ThreadPriority.BelowNormal }.Start();
+            }
+            return tcs.Task;
         }
-        catch (Exception e) { if (L.Preview) Console.WriteLine($"IMG FAIL {path} {decodeWidth}: {e.GetType().Name} {e.Message}"); return null; }
     }
 
+    private static void Work()
+    {
+        while (true)
+        {
+            (string Path, int Width, string Key) job;
+            TaskCompletionSource<Bitmap?>? tcs;
+            lock (Gate)
+            {
+                if (Pending.Count == 0) { _workers--; return; }
+                job = Pending.Pop();
+                InFlight.TryGetValue(job.Key, out tcs);
+            }
+            var bmp = Decode(job.Path, job.Width);
+            if (bmp is not null) Put(job.Key, bmp);
+            lock (Gate) InFlight.Remove(job.Key);
+            tcs?.TrySetResult(bmp);
+        }
+    }
+
+    private static Bitmap? Decode(string path, int decodeWidth)
+    {
+        try
+        {
+            if (!File.Exists(path)) return null;
+            using var s = File.OpenRead(path);
+            return Bitmap.DecodeToWidth(s, decodeWidth, BitmapInterpolationMode.MediumQuality);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException or NotSupportedException)
+        {
+            return null;
+        }
+    }
     public static WriteableBitmap FromBgra(byte[] bgra, int w, int h)
     {
         var wb = new WriteableBitmap(new PixelSize(w, h), new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Premul);

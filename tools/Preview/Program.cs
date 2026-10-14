@@ -68,11 +68,13 @@ internal static class Program
             }
             if (args.Contains("--debug-home"))
             {
-                L.Settings.Set(K.Theme, "livingroom");
+                L.Settings.Set(K.Theme, args.SkipWhile(a => a != "--debug-home").Skip(1).FirstOrDefault() ?? "livingroom");
                 _window.ApplyTheme(rebuild: true);
+                Console.WriteLine($"    cache hits: {string.Join(", ", L.Library.VideoCollections().Take(3).Select(c => c.Art is null ? "none" : (ImageCache.TryGet(c.Art + "|630") is null ? "miss" : "hit")))}");
                 Pump(40);
                 Shot("debug-home-short");
                 Pump(150);
+                Console.WriteLine($"    after: {string.Join(", ", L.History.Recent(5).Select(r => L.Library.Get(r.Path)?.Art is { } a ? (ImageCache.TryGet(a + "|567") is null ? "miss" : "hit") : "noart"))}");
                 Shot("debug-home-long");
                 return 0;
             }
@@ -123,6 +125,7 @@ internal static class Program
             }
 
             RenderIcons();
+            RenderBanner();
             Console.WriteLine($"Previews written to {_out}");
             return 0;
         }
@@ -175,6 +178,9 @@ internal static class Program
     private static void Shot(string name)
     {
         Pump();
+        var until = DateTime.Now.AddSeconds(15);
+        while (ImageCache.Busy && DateTime.Now < until) Pump(5);
+        Pump(5);
         var frame = _window.CaptureRenderedFrame();
         if (frame is null) throw new InvalidOperationException("Nothing rendered for " + name);
         var file = Path.Combine(_out, name + ".png");
@@ -264,6 +270,54 @@ internal static class Program
         using var rtb = new RenderTargetBitmap(new PixelSize(w, h));
         rtb.Render(c);
         rtb.Save(file);
+    }
+
+    /// <summary>The README banner: the name and promise on the left, the real Aurora home
+    /// screen (rendered above) on the right.</summary>
+    private static void RenderBanner()
+    {
+        const int w = 1800, h = 640;
+        var shot = new Bitmap(Path.Combine(_out, "aurora-home.png"));
+        var grid = new Grid
+        {
+            Width = w, Height = h,
+            Background = new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative), EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
+                GradientStops = { new GradientStop(Color.Parse("#05060A"), 0), new GradientStop(Color.Parse("#0B1A3A"), 0.55), new GradientStop(Color.Parse("#2A0E3D"), 1) },
+            },
+        };
+        grid.Children.Add(new Border
+        {
+            Background = new RadialGradientBrush
+            {
+                Center = new RelativePoint(0.75, 0.2, RelativeUnit.Relative), GradientOrigin = new RelativePoint(0.75, 0.2, RelativeUnit.Relative),
+                RadiusX = new RelativeScalar(0.6, RelativeUnit.Relative), RadiusY = new RelativeScalar(0.8, RelativeUnit.Relative),
+                GradientStops = { new GradientStop(Color.FromArgb(110, 10, 132, 255), 0), new GradientStop(Color.FromArgb(0, 10, 132, 255), 1) },
+            },
+        });
+        var icon = new Bitmap(Path.Combine(_out, "icon-256.png"));
+        var left = new StackPanel
+        {
+            Spacing = 18, Margin = new Thickness(90, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, Width = 700, HorizontalAlignment = HorizontalAlignment.Left,
+            Children =
+            {
+                new Image { Source = icon, Width = 120, Height = 120, HorizontalAlignment = HorizontalAlignment.Left },
+                new TextBlock { Text = "Lounge", FontSize = 96, FontWeight = FontWeight.Bold, Foreground = Brushes.White, FontFamily = T.Font },
+                new TextBlock { Text = "Your PC, on the couch. Films, music, streaming, apps and files, all with an Xbox controller.", FontSize = 30, Foreground = new SolidColorBrush(Color.FromArgb(200, 255, 255, 255)), TextWrapping = TextWrapping.Wrap, FontFamily = T.Font, LineHeight = 42 },
+            },
+        };
+        grid.Children.Add(left);
+        grid.Children.Add(new Border
+        {
+            Width = 960, Height = 540, CornerRadius = new CornerRadius(24), ClipToBounds = true,
+            HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 70, 0),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(60, 255, 255, 255)), BorderThickness = new Thickness(1),
+            Background = new ImageBrush(shot) { Stretch = Stretch.UniformToFill },
+            BoxShadow = new BoxShadows(new BoxShadow { OffsetY = 30, Blur = 80, Color = Color.FromArgb(180, 0, 0, 0) }),
+        });
+        Render(grid, Path.Combine(_out, "banner.png"), w, h);
+        Console.WriteLine("  wrote banner.png");
     }
 
     /// <summary>The app icon: a soft gradient tile with a lounge-chair glyph, at the

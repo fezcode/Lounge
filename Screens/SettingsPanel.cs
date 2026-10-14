@@ -385,6 +385,6 @@ public sealed class SettingsPanel : Grid, IInputLayer
         L.Settings.Changed -= OnChanged;
         L.Play(UiSound.Back);
         _in.To(0);
-        DispatcherTimer.RunOnce(() => L.Window.RemoveOverlay(this), TimeSpan.FromMilliseconds(260));
+        L.Window.DismissOverlay(this, 260);
     }
 }
