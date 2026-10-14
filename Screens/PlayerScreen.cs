@@ -31,7 +31,7 @@ public sealed class PlayerScreen : Screen
     private long _subsGeneration = -1;
     private readonly Grid _osd = new();
     private readonly Spring _osdSpring;
-    private readonly TextBlock _title = Ui.Text("", T.Title, Brushes.White, FontWeight.Bold);
+    private readonly TextBlock _title = Ui.Text("", T.Title, Brushes.White, T.TitleWeight);
     private readonly TextBlock _subtitle = Ui.Text("", T.Body, new SolidColorBrush(Color.FromArgb(190, 255, 255, 255)));
     private readonly TextBlock _elapsed = Ui.Text("0:00", T.Body, Brushes.White, FontWeight.SemiBold);
     private readonly TextBlock _remaining = Ui.Text("", T.Body, new SolidColorBrush(Color.FromArgb(190, 255, 255, 255)), FontWeight.SemiBold);

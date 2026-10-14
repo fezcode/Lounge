@@ -136,6 +136,7 @@ public static class SettingsSchema
         new("kodi", "Kodi Classic"),
         new("console", "Console One"),
         new("series", "Series"),
+        new("screening", "Screening Room"),
     ];
 
     public static readonly IReadOnlyList<SettingChoice> Accents =

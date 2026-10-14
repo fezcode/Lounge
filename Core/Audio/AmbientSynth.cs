@@ -47,6 +47,10 @@ public sealed class AmbientSynth
         ["series"] = new("series", "Series",
             [[45, 52, 57, 64, 69], [41, 48, 53, 60, 65], [43, 50, 55, 62, 67], [40, 47, 52, 59, 64]],
             8.0, 0.14, 0.6, 10, 0.5, 0.09, 1.6, [69, 71, 74, 76, 79, 81, 83], 0.7, 0.50, 0.11),
+        // Late-night noir: dark minor-ninth voicings, a lone piano in a velvet room.
+        ["screening"] = new("screening", "Screening Room",
+            [[38, 45, 53, 57, 60, 64], [43, 50, 53, 57, 59, 64], [36, 43, 52, 55, 59, 62], [45, 52, 55, 58, 61]],
+            11.0, 0.11, 0.25, 6, 0.3, 0.13, 3.2, [62, 64, 65, 67, 69, 71, 72, 74, 77], 0.35, 0.62),
     };
 
     private readonly AmbientPreset _p;

@@ -1,4 +1,4 @@
-﻿using Avalonia.Controls;
+using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Lounge.Controls;
@@ -208,6 +208,7 @@ public static class HomeModel
     {
         Color c;
         try { c = Color.Parse(hex); } catch (FormatException) { c = Colors.SlateGray; }
+        c = T.Tone(c);
         var dark = Color.FromArgb(255, (byte)(c.R * 0.55), (byte)(c.G * 0.55), (byte)(c.B * 0.55));
         return new LinearGradientBrush
         {

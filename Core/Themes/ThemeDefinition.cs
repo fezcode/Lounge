@@ -14,10 +14,14 @@ public enum HomeLayout
     IconRow,
     /// <summary>Xbox Series: a dense tile grid with grouped rows.</summary>
     TileGrid,
+    /// <summary>Screening Room: a printed programme. Destinations are a numbered index in
+    /// large serif type; the focused one's line-up sits beside it.</summary>
+    Programme,
 }
 
 /// <summary>A procedural default backdrop, so themes need no shipped wallpapers.</summary>
-public enum BackdropStyle { Aurora, Sunset, Fanart, Waves, Glow }
+/// <summary>Projector: a warm cone of light with flicker, film grain and a vignette.</summary>
+public enum BackdropStyle { Aurora, Sunset, Fanart, Waves, Glow, Projector }
 
 /// <summary>Everything a theme decides. Colours are #RRGGBB or #AARRGGBB strings so Core
 /// stays free of Avalonia; the Shell turns them into brushes.</summary>
@@ -57,6 +61,15 @@ public sealed record ThemeDefinition
     public bool PrefersLists { get; init; }
     public string AmbientPreset { get; init; } = "aurora";
     public string SoundSet { get; init; } = "aurora";
+
+    /// <summary>Typefaces from Assets/Fonts by family name; null keeps Inter. The body font
+    /// sets everything; the display font sets titles and headers.</summary>
+    public string? BodyFont { get; init; }
+    public string? DisplayFont { get; init; }
+
+    /// <summary>Placeholder art (no poster yet, app monograms) is pulled toward this colour
+    /// so it sits in the theme's palette; null keeps the entries' own colours.</summary>
+    public string? ArtTone { get; init; }
 
     /// <summary>The accent in force: the user's override, or the theme's own.</summary>
     public ThemeDefinition WithAccent(string? accent) =>
@@ -126,7 +139,24 @@ public static class Themes
         TitleWeight = 600, AmbientPreset = "series", SoundSet = "series",
     };
 
-    public static readonly IReadOnlyList<ThemeDefinition> All = [Aurora, LivingRoom, Kodi, ConsoleOne, Series];
+    /// <summary>A film-house programme: serif title cards over typewritten (screenplay)
+    /// text, projector light on warm black, marquee amber, square corners, quiet motion.</summary>
+    public static readonly ThemeDefinition ScreeningRoom = new()
+    {
+        Id = "screening", Name = "Screening Room", Layout = HomeLayout.Programme, Backdrop = BackdropStyle.Projector,
+        Bg0 = "#0E0C0A", Bg1 = "#060504",
+        BackdropA = "#F4D9A6", BackdropB = "#7A4A1C", BackdropC = "#120E0A",
+        Surface = "#1AF2E6D2", SurfaceStrong = "#F5110F0D", Line = "#38F2E6D2",
+        Text = "#F2E6D2", TextMuted = "#B0F2E6D2", TextFaint = "#5CF2E6D2",
+        Accent = "#E8A33D", OnAccent = "#170F05", Focus = "#E8A33D",
+        Danger = "#E5533D", Success = "#9DBF6A",
+        Radius = 2, RadiusLarge = 3, FocusScale = 1.03, SpringStiffness = 240, SpringDamping = 26,
+        TitleWeight = 400, HeaderLetterSpacing = 0,
+        BodyFont = "IBM Plex Mono", DisplayFont = "Instrument Serif", ArtTone = "#6B4A2B",
+        AmbientPreset = "screening", SoundSet = "screening",
+    };
+
+    public static readonly IReadOnlyList<ThemeDefinition> All = [Aurora, LivingRoom, Kodi, ConsoleOne, Series, ScreeningRoom];
 
     public static ThemeDefinition Get(string id) => All.FirstOrDefault(t => t.Id == id) ?? Aurora;
 }

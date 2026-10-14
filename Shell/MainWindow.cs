@@ -683,6 +683,7 @@ public sealed class MainWindow : Window
     public void ApplyTheme(bool rebuild)
     {
         T.Apply(Lounge.Core.Themes.Themes.Get(L.Settings.String(K.Theme)), L.Settings.String(K.Accent));
+        FontFamily = T.Font;
         _backdrop.Restyle();
         _backdrop.SetWallpaper(L.Settings.String(K.WallpaperFor(T.Def.Id)));
         App.ConfigureSound();

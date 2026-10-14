@@ -1,4 +1,4 @@
-﻿using Lounge.Core.Input;
+using Lounge.Core.Input;
 using Lounge.Core.Media;
 using Lounge.Core.Settings;
 using Xunit;
@@ -190,7 +190,7 @@ public class SettingsTests
         using var dir = new TempDir();
         var s = new SettingsStore(dir.File("settings.json"), dir.File("config.ini"));
         s.Step(K.Theme, -1);
-        Assert.Equal("series", s.String(K.Theme));
+        Assert.Equal("screening", s.String(K.Theme));   // wraps to the last theme
         s.Step(K.UiScale, 1);
         Assert.Equal(1.05, s.Double(K.UiScale), 6);
         Assert.Equal("105%", SettingsSchema.Get(K.UiScale).ShowValue(s.Get(K.UiScale)));

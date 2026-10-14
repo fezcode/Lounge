@@ -21,7 +21,7 @@ namespace Lounge.Screens;
 public sealed class NowPlayingScreen : Screen
 {
     private readonly Border _cover = new() { Width = 560, Height = 560, CornerRadius = new CornerRadius(28), ClipToBounds = true };
-    private readonly TextBlock _title = Ui.Text("", 54, T.Text, FontWeight.Bold);
+    private readonly TextBlock _title = Ui.Text("", 54, T.Text, T.TitleWeight);
     private readonly TextBlock _artist = Ui.Text("", T.Heading, T.TextMuted);
     private readonly TextBlock _elapsed = Ui.Text("", T.Caption, T.TextMuted);
     private readonly TextBlock _remaining = Ui.Text("", T.Caption, T.TextMuted);

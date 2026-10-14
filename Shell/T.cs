@@ -32,7 +32,22 @@ public static class T
     public static double Radius => Def.Radius;
     public static double RadiusLarge => Def.RadiusLarge;
 
-    public static FontFamily Font { get; } = new("fonts:Inter#Inter, Segoe UI");
+    private const string Fallback = "fonts:Inter#Inter, Segoe UI";
+
+    /// <summary>The theme's body typeface (Inter unless the theme ships its own).</summary>
+    public static FontFamily Font { get; private set; } = new(Fallback);
+
+    /// <summary>The theme's title typeface; the body font when the theme has none.</summary>
+    public static FontFamily DisplayFont { get; private set; } = new(Fallback);
+
+    public static bool HasDisplayFont => Def.DisplayFont is not null;
+
+    /// <summary>Fonts ship in Assets/Fonts of whichever assembly is running (Lounge, or the
+    /// preview and check tools that compile the same sources), with Inter behind them for
+    /// any symbol the theme's font lacks.</summary>
+    private static FontFamily Family(string? name) => name is null
+        ? new FontFamily(Fallback)
+        : new FontFamily($"avares://{typeof(T).Assembly.GetName().Name}/Assets/Fonts#{name}, {Fallback}");
 
     // Type scale on the 1920x1080 grid. Whole pixels only: fractional metrics are what
     // made Cogas's text look soft. Nothing below 22.
@@ -55,10 +70,23 @@ public static class T
         FocusColor = Parse(Def.Focus);
         TextColor = Parse(Def.Text);
         Bg0Color = Parse(Def.Bg0);
+        Font = Family(Def.BodyFont);
+        DisplayFont = Def.DisplayFont is null ? Font : Family(Def.DisplayFont);
         Changed?.Invoke();
     }
 
     public static IBrush B(string hex) => new SolidColorBrush(Parse(hex)).ToImmutable();
+
+    /// <summary>A placeholder colour in the theme's palette: mixed toward the theme's art
+    /// tone, keeping a trace of the original hue so entries still tell apart.</summary>
+    public static Color Tone(Color c)
+    {
+        if (Def.ArtTone is not { } hex) return c;
+        var t = Parse(hex);
+        const double keep = 0.28;
+        byte Mix(byte from, byte to) => (byte)Math.Round(from * keep + to * (1 - keep));
+        return Color.FromArgb(c.A, Mix(c.R, t.R), Mix(c.G, t.G), Mix(c.B, t.B));
+    }
 
     public static IBrush WithAlpha(Color c, double a) => new SolidColorBrush(Color.FromArgb((byte)(a * 255), c.R, c.G, c.B)).ToImmutable();
 

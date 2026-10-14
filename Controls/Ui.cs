@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -12,7 +12,7 @@ public static class Ui
     public static TextBlock Text(string text, double size = T.Body, IBrush? brush = null, FontWeight weight = FontWeight.Medium,
         TextWrapping wrap = TextWrapping.NoWrap, double letterSpacing = 0)
     {
-        return new TextBlock
+        var block = new TextBlock
         {
             Text = text,
             FontSize = size,
@@ -22,10 +22,25 @@ public static class Ui
             TextTrimming = wrap == TextWrapping.NoWrap ? TextTrimming.CharacterEllipsis : TextTrimming.None,
             LetterSpacing = letterSpacing,
         };
+        // Titles (heading size and up, in the theme's title weight) take the display face.
+        if (T.HasDisplayFont && size >= T.Heading && weight == T.TitleWeight) Display(block);
+        return block;
+    }
+
+    /// <summary>Sets a text in the theme's display typeface. Display faces often come in a
+    /// single weight, so the weight goes back to normal rather than being faked.</summary>
+    public static TextBlock Display(TextBlock block, bool italic = false)
+    {
+        if (!T.HasDisplayFont) return block;
+        block.FontFamily = T.DisplayFont;
+        block.FontWeight = FontWeight.Normal;
+        block.LetterSpacing = 0;
+        if (italic) block.FontStyle = FontStyle.Italic;
+        return block;
     }
 
     public static TextBlock Header(string text, double size = T.Heading) =>
-        Text(T.Header(text), size, T.Text, T.TitleWeight, letterSpacing: T.Def.HeaderLetterSpacing);
+        Display(Text(T.Header(text), size, T.Text, T.TitleWeight, letterSpacing: T.Def.HeaderLetterSpacing));
 
     public static TextBlock Muted(string text, double size = T.Caption, TextWrapping wrap = TextWrapping.NoWrap) =>
         Text(text, size, T.TextMuted, FontWeight.Medium, wrap);
@@ -106,6 +121,7 @@ public static class Ui
         var letters = string.Concat(name.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(w => char.ToUpperInvariant(w[0])));
         Color c;
         try { c = Color.Parse(color); } catch (FormatException) { c = Colors.SlateGray; }
+        c = T.Tone(c);
         var light = Color.FromArgb(255, (byte)Math.Min(255, c.R + 40), (byte)Math.Min(255, c.G + 40), (byte)Math.Min(255, c.B + 40));
         return new Border
         {

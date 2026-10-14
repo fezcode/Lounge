@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
 using Avalonia.Media;
@@ -168,6 +168,56 @@ public sealed class Backdrop : Grid
                 };
                 break;
             }
+            case BackdropStyle.Projector:
+            {
+                // The beam: a tall, narrow wash of warm light falling from above the screen.
+                var beam = new RadialGradientBrush
+                {
+                    Center = new RelativePoint(0.62, -0.12, RelativeUnit.Relative),
+                    GradientOrigin = new RelativePoint(0.62, -0.12, RelativeUnit.Relative),
+                    RadiusX = new RelativeScalar(0.42, RelativeUnit.Relative),
+                    RadiusY = new RelativeScalar(1.15, RelativeUnit.Relative),
+                    GradientStops =
+                    {
+                        new GradientStop(Color.FromArgb(70, a.R, a.G, a.B), 0),
+                        new GradientStop(Color.FromArgb(26, a.R, a.G, a.B), 0.45),
+                        new GradientStop(Color.FromArgb(0, a.R, a.G, a.B), 1),
+                    },
+                };
+                var beamShape = new Border { Background = beam, IsHitTestVisible = false };
+                _scene.Children.Add(beamShape);
+                // Warm light pooling low, where a screen's glow would land in the room.
+                var pool = Blob(b, 0.3, 1.05, 0.65, 0.35);
+                _scene.Children.Add(pool.Shape);
+                // Film grain, re-dealt every frame by moving the tile.
+                var grain = new ImageBrush(Grain()) { TileMode = TileMode.Tile, Stretch = Stretch.None, DestinationRect = new RelativeRect(0, 0, 256, 256, RelativeUnit.Absolute) };
+                _scene.Children.Add(new Border { Background = grain, Opacity = 0.55, IsHitTestVisible = false });
+                // Vignette: the edges of the frame fall away to black.
+                _scene.Children.Add(new Border
+                {
+                    IsHitTestVisible = false,
+                    Background = new RadialGradientBrush
+                    {
+                        Center = new RelativePoint(0.5, 0.45, RelativeUnit.Relative),
+                        GradientOrigin = new RelativePoint(0.5, 0.45, RelativeUnit.Relative),
+                        RadiusX = new RelativeScalar(0.75, RelativeUnit.Relative),
+                        RadiusY = new RelativeScalar(0.8, RelativeUnit.Relative),
+                        GradientStops =
+                        {
+                            new GradientStop(Color.FromArgb(0, 0, 0, 0), 0.55),
+                            new GradientStop(Color.FromArgb(200, 0, 0, 0), 1),
+                        },
+                    },
+                });
+                var rng = new Random(7);
+                _animate = t =>
+                {
+                    // A lamp's flicker: two slow beats and a little irregular shimmer.
+                    beamShape.Opacity = 0.86 + 0.07 * Math.Sin(t * 0.9) + 0.04 * Math.Sin(t * 2.7 + 1.3) + 0.03 * rng.NextDouble();
+                    grain.DestinationRect = new RelativeRect(-rng.Next(256), -rng.Next(256), 256, 256, RelativeUnit.Absolute);
+                };
+                break;
+            }
         }
 
         _scrim.Background = new LinearGradientBrush
@@ -183,6 +233,34 @@ public sealed class Backdrop : Grid
         };
         _animate?.Invoke(_t);
         UpdateTimer();
+    }
+
+    private static Avalonia.Media.Imaging.WriteableBitmap? _grain;
+
+    /// <summary>A 256 px tile of monochrome noise for film grain (made once).</summary>
+    private static Avalonia.Media.Imaging.WriteableBitmap Grain()
+    {
+        if (_grain is not null) return _grain;
+        var bmp = new Avalonia.Media.Imaging.WriteableBitmap(new PixelSize(256, 256), new Vector(96, 96),
+            Avalonia.Platform.PixelFormat.Bgra8888, Avalonia.Platform.AlphaFormat.Premul);
+        using (var fb = bmp.Lock())
+        {
+            var rng = new Random(11);
+            var row = new byte[256 * 4];
+            for (int y = 0; y < 256; y++)
+            {
+                for (int x = 0; x < 256; x++)
+                {
+                    // Light and dark specks, premultiplied, faint on average.
+                    var light = rng.Next(2) == 0;
+                    var alpha = (byte)(rng.NextDouble() < 0.5 ? rng.Next(0, 22) : rng.Next(0, 8));
+                    var v = light ? alpha : (byte)0;
+                    row[x * 4] = v; row[x * 4 + 1] = v; row[x * 4 + 2] = v; row[x * 4 + 3] = alpha;
+                }
+                System.Runtime.InteropServices.Marshal.Copy(row, 0, fb.Address + y * fb.RowBytes, row.Length);
+            }
+        }
+        return _grain = bmp;
     }
 
     private static Geometry Wave(double phase, double baseY, double amp)

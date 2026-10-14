@@ -57,6 +57,7 @@ public sealed class HomeScreen : Screen
         _entries.Clear();
         _previewId = null;
         _kodiShown = null;
+        _programmeShown = null;
         _heroTitle = _heroSubtitle = null;
         var (content, root) = T.Def.Layout switch
         {
@@ -64,6 +65,7 @@ public sealed class HomeScreen : Screen
             HomeLayout.SideMenu => Kodi(),
             HomeLayout.IconRow => ConsoleOne(),
             HomeLayout.TileGrid => Series(),
+            HomeLayout.Programme => Programme(),
             _ => Aurora(),
         };
         Children.Add(content);
@@ -488,6 +490,127 @@ public sealed class HomeScreen : Screen
         }
         var scroll = new ScrollViewer { Content = stack, VerticalScrollBarVisibility = ScrollBarVisibility.Hidden, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         return (scroll, root);
+    }
+
+    // ------------------------------------------------------------------ Screening Room (programme)
+
+    /// <summary>A printed film programme: a masthead, then the destinations as a numbered
+    /// index in large serif type, and beside it the focused one's line-up under typewritten
+    /// labels. Focus is quiet: the title turns italic and lights up, the reel number turns
+    /// amber, and a rule draws in under it.</summary>
+    private (Control, FocusNode) Programme()
+    {
+        var grid = Ui.Grid("780,*", "Auto,*,Auto");
+        var root = new FocusList(horizontal: true);
+        var sections = HomeModel.Sections().ToDictionary(s => s.Id);
+
+        // Masthead: the house name in type, tonight's date as a title card, a fine rule.
+        var now = DateTime.Now;
+        var house = Ui.Text("LOUNGE  ·  PICTURE HOUSE", T.Caption, T.Accent, FontWeight.Medium, letterSpacing: 5);
+        var tonight = Ui.Display(Ui.Text($"Tonight, {now:dddd d MMMM}", 40, T.TextMuted), italic: true);
+        var rule = new Border { Height = 1, Background = T.Line, Margin = new Thickness(0, 22, 0, 0) };
+        grid.Children.Add(Ui.V(10, house, tonight, rule).Margin(96, 56, 96, 0).Col(0, 2).Row(0));
+
+        var indexFocus = root.Add(new FocusList(horizontal: false, rememberIndex: true));
+        var index = new StackPanel { Spacing = 2, Margin = new Thickness(96, 34, 0, 0) };
+        var featureHost = new ContentControl();
+        var featureFocus = root.Add(new FocusList(horizontal: false, rememberIndex: false));
+        var number = 0;
+        foreach (var d in HomeModel.Destinations())
+        {
+            number++;
+            var sid = d.Title switch { "Videos" => "videos", "Music" => "music", "Apps & Games" => "apps", "Web" => "web", _ => null };
+            var reel = Ui.Text(number.ToString("00"), T.Caption, T.TextFaint, FontWeight.Medium, letterSpacing: 2);
+            reel.Width = 64;
+            reel.VerticalAlignment = VerticalAlignment.Center;
+            var title = Ui.Display(Ui.Text(d.Title, 68, T.TextFaint));
+            var underline = new Border { Height = 2, Width = 0, Background = T.Accent, HorizontalAlignment = HorizontalAlignment.Left };
+            var underlineWidth = new Spring(0, v => underline.Width = v, 260, 26);
+            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
+            row.Children.Add(reel.Col(0));
+            row.Children.Add(title.Col(1));
+            var card = new Card(Ui.V(0, row, underline.Margin(64, -4, 0, 8)).Margin(0, 0, 40, 0), 0)
+            {
+                FocusScale = 1.0, ShowRing = false, ShowGlow = false, HorizontalAlignment = HorizontalAlignment.Left,
+            };
+            card.Body.Background = Brushes.Transparent;
+            card.Focused += f =>
+            {
+                title.Foreground = f ? T.Text : T.TextFaint;
+                title.FontStyle = f ? FontStyle.Italic : FontStyle.Normal;
+                reel.Foreground = f ? T.Accent : T.TextFaint;
+                underlineWidth.To(f ? Math.Max(120, title.Bounds.Width * 0.55) : 0);
+                if (!f) return;
+                _contentDebounce?.Dispose();
+                _contentDebounce = DispatcherTimer.RunOnce(() => FillProgramme(featureHost, featureFocus, d, sid is null ? null : sections.GetValueOrDefault(sid), sections.GetValueOrDefault("jump")), TimeSpan.FromMilliseconds(130));
+            };
+            card.Item.Activate = d.Open;
+            _entries[card.Item] = d;
+            index.Children.Add(card);
+            indexFocus.Add(card.Item);
+        }
+        grid.Children.Add(index.Col(0).Row(1));
+        grid.Children.Add(featureHost.Col(1).Row(1));
+        grid.Children.Add(HintBar().Margin(96, 0, 0, 40).Col(0, 2).Row(2));
+        FillProgramme(featureHost, featureFocus, HomeModel.Destinations()[0], sections.GetValueOrDefault("videos"), sections.GetValueOrDefault("jump"));
+        return (grid, root);
+    }
+
+    private string? _programmeShown;
+
+    /// <summary>The line-up beside the index: what this destination is showing.</summary>
+    private void FillProgramme(ContentControl host, FocusList focus, HomeEntry dest, HomeSection? section, HomeSection? jump)
+    {
+        if (_programmeShown == dest.Title && host.Content is not null) return;
+        _programmeShown = dest.Title;
+        foreach (var item in focus.Items.ToList()) _entries.Remove(item);
+        focus.Clear();
+        var stack = new StackPanel { Spacing = 6, Margin = new Thickness(0, 40, 0, 0) };
+
+        void AddRow(HomeSection s, string label, double w, double h)
+        {
+            var list = new FocusList(horizontal: true);
+            var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 24, Margin = new Thickness(0, 16, 96, 20) };
+            foreach (var e in s.Entries.Take(12))
+            {
+                var card = EntryCard(e, w, h);
+                panel.Children.Add(Captioned(card, e, w));
+                list.Add(card.Item);
+            }
+            var header = Ui.H(16,
+                Ui.Text(label.ToUpperInvariant(), T.Caption, T.Accent, FontWeight.Medium, letterSpacing: 4),
+                new Border { Height = 1, Width = 220, Background = T.Line, VerticalAlignment = VerticalAlignment.Center });
+            stack.Children.Add(Ui.V(0, header,
+                new ScrollViewer { Content = panel, HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, ClipToBounds = false }));
+            focus.Add(list);
+        }
+
+        if (dest.Title == "Videos" && jump is not null) AddRow(jump, "Continue", 320, 180);
+        if (section is not null)
+        {
+            var (label, w, h) = section.Id switch
+            {
+                "videos" => ("Now showing", 168.0, 252.0),
+                "music" => ("On the record", 230.0, 230.0),
+                "apps" => ("The arcade", 230.0, 230.0),
+                "web" => ("On air", 360.0, 203.0),
+                _ => (section.Title, 230.0, 230.0),
+            };
+            AddRow(section, label, w, h);
+        }
+        else
+        {
+            // Nothing to line up: a title card for the destination instead.
+            var card = Ui.V(18,
+                Ui.Text("FEATURE", T.Caption, T.Accent, FontWeight.Medium, letterSpacing: 4),
+                Ui.Display(Ui.Text(dest.Subtitle ?? dest.Title, 64, T.Text, wrap: TextWrapping.Wrap), italic: true),
+                Ui.Muted("Press A to open", T.Body));
+            card.MaxWidth = 860;
+            card.Margin = new Thickness(0, 120, 96, 0);
+            stack.Children.Add(card);
+        }
+        host.Content = new ScrollViewer { Content = stack, VerticalScrollBarVisibility = ScrollBarVisibility.Hidden, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        RefreshFocus();
     }
 
     // ------------------------------------------------------------------ input

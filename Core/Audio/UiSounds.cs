@@ -17,6 +17,7 @@ public static class UiSounds
         ["kodi"] = new(0.75, 0.3, 1.2),
         ["console"] = new(1.12, 0.6, 1.4),
         ["series"] = new(1.26, 0.8, 0.9),
+        ["screening"] = new(0.66, 0.18, 0.75),   // low, soft and short: a projector's click
     };
 
     public static float[] Render(UiSound sound, string theme)

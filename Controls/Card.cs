@@ -44,6 +44,9 @@ public class Card : Panel
     }
     public bool ShowRing { get; set; } = true;
 
+    /// <summary>Whether focus also lifts a soft shadow and glow (off for type-only focus).</summary>
+    public bool ShowGlow { get; set; } = true;
+
     public event Action<bool>? Focused;
 
     public Card(Control? content = null, double radius = -1, object? tag = null)
@@ -99,7 +102,7 @@ public class Card : Panel
     {
         var s = (1 + (FocusScale - 1) * _focusAmount) * _press;
         _scale.ScaleX = _scale.ScaleY = s;
-        _glow.Opacity = Math.Clamp(_focusAmount, 0, 1);
+        _glow.Opacity = ShowGlow ? Math.Clamp(_focusAmount, 0, 1) : 0;
         _ring.Opacity = ShowRing ? Math.Clamp(_focusAmount, 0, 1) * 0.9 : 0;
     }
 

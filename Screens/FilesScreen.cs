@@ -38,7 +38,7 @@ public sealed class FilesScreen : Screen
     private readonly Dictionary<FocusItem, Place> _places = new();
     private readonly Dictionary<string, Border> _checks = new(StringComparer.OrdinalIgnoreCase);
     private readonly Stack<string> _cameFrom = new();
-    private readonly TextBlock _path = Ui.Text("", T.Heading, T.Text, T.TitleWeight);
+    private readonly TextBlock _path = Ui.Text("", T.Heading, T.Text, FontWeight.SemiBold);
     private readonly TextBlock _status = Ui.Text("", T.Caption, T.TextMuted);
     private readonly StackPanel _placesPanel = new() { Spacing = 4, Margin = new Thickness(24, 12, 24, 24) };
     private readonly ContentControl _listHost = new();
