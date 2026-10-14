@@ -125,7 +125,6 @@ internal static class Program
                 Pump(10);
             }
 
-            RenderIcons();
             RenderBanner();
             Console.WriteLine($"Previews written to {_out}");
             return 0;
@@ -237,6 +236,9 @@ internal static class Program
         return sample;
     }
 
+    /// <summary>Banner and sample posters keep Lounge's house face, whatever theme ran last.</summary>
+    private static readonly FontFamily Inter = new("fonts:Inter#Inter, Segoe UI");
+
     private static void Poster(string file, string title, string palette, int w, int h)
     {
         var colors = palette.Split(',').Select(Color.Parse).ToArray();
@@ -259,7 +261,7 @@ internal static class Program
         {
             Text = title.ToUpperInvariant(), FontSize = w / 9.0, FontWeight = FontWeight.Black, Foreground = Brushes.White,
             TextWrapping = TextWrapping.Wrap, Margin = new Thickness(w * 0.08), VerticalAlignment = VerticalAlignment.Bottom,
-            LetterSpacing = 2, FontFamily = T.Font,
+            LetterSpacing = 2, FontFamily = Inter,
         });
         Render(grid, file, w, h);
     }
@@ -297,15 +299,16 @@ internal static class Program
                 GradientStops = { new GradientStop(Color.FromArgb(110, 10, 132, 255), 0), new GradientStop(Color.FromArgb(0, 10, 132, 255), 1) },
             },
         });
-        var icon = new Bitmap(Path.Combine(_out, "icon-256.png"));
+        // The icon is drawn by tools/make-icon.ps1 and committed.
+        var icon = new Bitmap(Path.GetFullPath(Path.Combine("Assets", "Icon", "icon-256.png")));
         var left = new StackPanel
         {
             Spacing = 18, Margin = new Thickness(90, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, Width = 700, HorizontalAlignment = HorizontalAlignment.Left,
             Children =
             {
                 new Image { Source = icon, Width = 120, Height = 120, HorizontalAlignment = HorizontalAlignment.Left },
-                new TextBlock { Text = "Lounge", FontSize = 96, FontWeight = FontWeight.Bold, Foreground = Brushes.White, FontFamily = T.Font },
-                new TextBlock { Text = "Your PC, on the couch. Films, music, streaming, apps and files, all with an Xbox controller.", FontSize = 30, Foreground = new SolidColorBrush(Color.FromArgb(200, 255, 255, 255)), TextWrapping = TextWrapping.Wrap, FontFamily = T.Font, LineHeight = 42 },
+                new TextBlock { Text = "Lounge", FontSize = 96, FontWeight = FontWeight.Bold, Foreground = Brushes.White, FontFamily = Inter },
+                new TextBlock { Text = "Your PC, on the couch. Films, music, streaming, apps and files, all with an Xbox controller.", FontSize = 30, Foreground = new SolidColorBrush(Color.FromArgb(200, 255, 255, 255)), TextWrapping = TextWrapping.Wrap, FontFamily = Inter, LineHeight = 42 },
             },
         };
         grid.Children.Add(left);
@@ -321,42 +324,4 @@ internal static class Program
         Console.WriteLine("  wrote banner.png");
     }
 
-    /// <summary>The app icon: a soft gradient tile with a lounge-chair glyph, at the
-    /// sizes Windows asks for.</summary>
-    private static void RenderIcons()
-    {
-        foreach (var size in new[] { 16, 24, 32, 48, 64, 128, 256 })
-        {
-            var r = size * 0.22;
-            var tile = new Border
-            {
-                Width = size, Height = size, CornerRadius = new CornerRadius(r),
-                Background = new LinearGradientBrush
-                {
-                    StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative), EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
-                    GradientStops = { new GradientStop(Color.Parse("#0A84FF"), 0), new GradientStop(Color.Parse("#6D28D9"), 0.6), new GradientStop(Color.Parse("#DB2777"), 1) },
-                },
-                Child = new Viewbox
-                {
-                    Width = size * 0.62, Height = size * 0.62,
-                    Child = new Canvas
-                    {
-                        Width = 24, Height = 24,
-                        Children =
-                        {
-                            new Avalonia.Controls.Shapes.Path
-                            {
-                                // A sofa: back, seat and arms, the "lounge".
-                                Data = Geometry.Parse("M5 11V8a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v3 M3 12a2 2 0 0 1 4 0v2h10v-2a2 2 0 0 1 4 0v5H3z M5 17v2 M19 17v2"),
-                                Stroke = Brushes.White, StrokeThickness = size < 32 ? 2.6 : 1.9,
-                                StrokeLineCap = PenLineCap.Round, StrokeJoin = PenLineJoin.Round,
-                            },
-                        },
-                    },
-                },
-            };
-            Render(tile, Path.Combine(_out, $"icon-{size}.png"), size, size);
-        }
-        Console.WriteLine("  wrote icon-*.png");
-    }
 }
