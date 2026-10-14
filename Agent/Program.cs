@@ -106,7 +106,7 @@ internal sealed class Agent : ApplicationContext
                 return;
         }
         _prompt = new PromptForm(_pad, s.Int(K.AgentTimeoutSeconds));
-        if (s.Bool(K.AgentVibrate)) _ = _pad.Pulse(0.45f, 140);
+        if (s.Bool(K.AgentVibrate)) _ = _pad.Pulse(0.8f, 350);
         _prompt.FormClosed += (_, _) =>
         {
             var answer = _prompt.Answer;

@@ -39,6 +39,15 @@ public class RouterTests
     }
 
     [Fact]
+    public void Feedback_pulses_are_long_and_strong_enough_to_feel()
+    {
+        var (p, ms) = XInputPad.Feel(0.15f, 30, 50);   // the lightest tick Lounge sends
+        Assert.True(p >= 0.3f && ms >= 120, $"{p} for {ms} ms");
+        Assert.Equal((0f, 0), XInputPad.Feel(0.4f, 80, 0));
+        Assert.True(XInputPad.Feel(0.4f, 80, 100).Power > XInputPad.Feel(0.4f, 80, 25).Power);
+    }
+
+    [Fact]
     public void Plain_press_fires_immediately()
     {
         var r = new Rig();

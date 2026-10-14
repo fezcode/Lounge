@@ -1,4 +1,4 @@
-using Lounge.Core;
+﻿using Lounge.Core;
 using Lounge.Core.Audio;
 using Lounge.Core.Input;
 using Lounge.Core.Launch;
@@ -69,7 +69,8 @@ public static class L
     public static void Rumble(float strength = 0.35f, int ms = 60)
     {
         if (!Settings.Bool(K.Vibration)) return;
-        _ = Pad.Pulse(strength * Settings.Int(K.VibrationStrength) / 50f, ms);
+        var (power, duration) = Lounge.Core.Input.XInputPad.Feel(strength, ms, Settings.Int(K.VibrationStrength));
+        if (power > 0) _ = Pad.Pulse(power, duration);
     }
 
     public static string AgentPath => Path.Combine(AppContext.BaseDirectory, "LoungeAgent.exe");

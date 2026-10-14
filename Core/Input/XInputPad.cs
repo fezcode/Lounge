@@ -60,6 +60,19 @@ public sealed class XInputPad
         return states.Count == 0 ? PadState.Disconnected : PadState.Merge(states);
     }
 
+    /// <summary>Turns a feedback request into a pulse a hand actually notices. Motors need
+    /// about 150 ms and a good share of power to be felt (tried on an Xbox Wireless
+    /// Controller: half power for 300 ms went unnoticed). The setting (0-100, 50 =
+    /// normal) scales it; 0 is off.</summary>
+    public static (float Power, int Ms) Feel(float strength, int ms, int setting)
+    {
+        if (setting <= 0 || strength <= 0) return (0, 0);
+        var scale = setting / 50f;
+        var power = Math.Clamp((0.45f + strength) * scale, 0.3f, 1f);
+        var duration = Math.Clamp((int)(Math.Max(ms * 2.5, 150) * Math.Max(scale, 0.75f)), 120, 600);
+        return (power, duration);
+    }
+
     /// <summary>Empty slots are asked about on the first read and then once a second.</summary>
     public static bool ShouldProbe(long? lastProbe, long nowMs) => lastProbe is not { } last || nowMs - last >= ReprobeMs;
 
