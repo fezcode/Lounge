@@ -525,7 +525,8 @@ public sealed class HomeScreen : Screen
             reel.VerticalAlignment = VerticalAlignment.Center;
             var title = Ui.Display(Ui.Text(d.Title, 68, T.TextFaint));
             var underline = new Border { Height = 2, Width = 0, Background = T.Accent, HorizontalAlignment = HorizontalAlignment.Left };
-            var underlineWidth = new Spring(0, v => underline.Width = v, 260, 26);
+            // A spring overshoots past its target; a width can't go below zero.
+            var underlineWidth = new Spring(0, v => underline.Width = Math.Max(0, v), 260, 26);
             var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
             row.Children.Add(reel.Col(0));
             row.Children.Add(title.Col(1));

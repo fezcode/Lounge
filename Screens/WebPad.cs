@@ -60,7 +60,9 @@ public sealed class WebPad
             if (!editable(el) || !window.chrome || !window.chrome.webview) return;
             const label = el.getAttribute('aria-label') || el.placeholder || el.name || '';
             const search = el.type === 'search' || /search|query|^q$/i.test((el.name || '') + ' ' + (el.id || '') + ' ' + label) || !!el.closest('form[role=search]');
-            window.chrome.webview.postMessage(JSON.stringify({ kind: 'text', label, value: el.value || '', search, password: el.type === 'password' }));
+            // A password field's contents never leave the page.
+            const password = el.type === 'password';
+            window.chrome.webview.postMessage(JSON.stringify({ kind: 'text', label, value: password ? '' : (el.value || ''), search, password }));
           }, true);
         })();
         """;

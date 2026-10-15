@@ -305,9 +305,30 @@ public sealed class WebScreen : Screen
         var gamepadApi = Eval(await c.CoreWebView2.ExecuteScriptAsync("typeof navigator.getGamepads === 'function' ? 'yes' : 'no'"));
         var pads = Eval(await c.CoreWebView2.ExecuteScriptAsync("Array.from(navigator.getGamepads()).filter(p => p).length.toString()"));
         var drm = await EvalPromise(c.CoreWebView2, DrmProbe);
+        // What a streaming site sees: each DRM system and robustness level, and the browser's brands.
+        var drmMatrix = await EvalPromise(c.CoreWebView2, """
+            (async () => {
+              const out = [];
+              const vid = 'video/mp4; codecs="avc1.640028"';
+              const tries = [
+                ['com.widevine.alpha', ''], ['com.widevine.alpha', 'SW_SECURE_DECODE'], ['com.widevine.alpha', 'HW_SECURE_ALL'],
+                ['com.microsoft.playready.recommendation', ''], ['com.microsoft.playready.recommendation', '2000'],
+                ['com.microsoft.playready.recommendation', '3000'], ['com.microsoft.playready.recommendation.3000', ''],
+                ['com.microsoft.playready.hardware', ''], ['com.microsoft.playready', '']];
+              for (const [ks, rob] of tries) {
+                try {
+                  await navigator.requestMediaKeySystemAccess(ks, [{ initDataTypes: ['cenc'], videoCapabilities: [{ contentType: vid, robustness: rob }], audioCapabilities: [{ contentType: 'audio/mp4; codecs="mp4a.40.2"' }] }]);
+                  out.push(ks + (rob ? ' ' + rob : '') + ': yes');
+                } catch (e) { out.push(ks + (rob ? ' ' + rob : '') + ': no'); }
+              }
+              const b = navigator.userAgentData ? navigator.userAgentData.brands.map(x => x.brand + ' ' + x.version).join(', ') : 'n/a';
+              out.push('brands: ' + b);
+              return out.join(' | ');
+            })()
+            """, 15000);
         Lounge.Shell.SelfCheck.Report("web", new
         {
-            loaded, title, gamepadApi, padsVisibleToPage = pads, drm,
+            loaded, title, gamepadApi, padsVisibleToPage = pads, drm, drmMatrix,
             pointerMode = pad.PointerMode, injected, keysReceived = keys, focusBefore, focusAfter, trustedClicks = clicks, video, text, walk, geometry = _host.Geometry(), failedRequests = _failedRequests.ToArray().TakeLast(60).ToList(),
             errors = Eval(await c.CoreWebView2.ExecuteScriptAsync("(window.__loungeErrors || []).slice(-15).join(' | ')")),
             userAgent = Eval(await c.CoreWebView2.ExecuteScriptAsync("navigator.userAgent")),
@@ -406,19 +427,20 @@ public sealed class WebScreen : Screen
             using var doc = System.Text.Json.JsonDocument.Parse(json);
             var r = doc.RootElement;
             if (r.GetProperty("kind").GetString() != "text") return;
-            Type(r.GetProperty("label").GetString() ?? "", r.GetProperty("value").GetString() ?? "", r.GetProperty("search").GetBoolean());
+            var password = r.TryGetProperty("password", out var pw) && pw.GetBoolean();
+            Type(r.GetProperty("label").GetString() ?? "", password ? "" : r.GetProperty("value").GetString() ?? "", r.GetProperty("search").GetBoolean(), password);
         }
         catch (Exception e) when (e is System.Text.Json.JsonException or KeyNotFoundException or InvalidOperationException) { }
     }
 
     /// <summary>The controller keyboard for whatever text field has focus in the page. The
     /// typed text replaces the field's value; search fields are submitted.</summary>
-    private void Type(string label, string value, bool search)
+    private void Type(string label, string value, bool search, bool password = false)
     {
         if (_typing || Environment.TickCount64 < _typeQuietUntil || _pad is not { } pad) return;
         _typing = true;
-        var title = string.IsNullOrWhiteSpace(label) ? $"Type into {_tile.Name}" : label.Trim();
-        L.Window.Keyboard(new KeyboardRequest(title, value, SelectAll: false), text =>
+        var title = password ? "Password" : string.IsNullOrWhiteSpace(label) ? $"Type into {_tile.Name}" : label.Trim();
+        L.Window.Keyboard(new KeyboardRequest(title, password ? "" : value, SelectAll: false, Secret: password), text =>
         {
             _typing = false;
             // Showing the page again re-focuses the field; don't open the keyboard again for that.

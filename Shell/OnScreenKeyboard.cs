@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Layout;
@@ -17,7 +17,8 @@ public sealed record KeyboardRequest(
     string? LockedSuffix = null,
     bool SelectAll = true,
     IReadOnlyList<string>? Suggestions = null,
-    Func<string, string?>? Validate = null);
+    Func<string, string?>? Validate = null,
+    bool Secret = false);   // passwords: shown as dots, never suggested, never prefilled
 
 /// <summary>The controller keyboard. Everything typed in Lounge goes through it: file
 /// names, folder names, URLs, tile names, searches. X deletes, Y types a space, LB/RB
@@ -184,7 +185,7 @@ public sealed class OnScreenKeyboard : Grid, IInputLayer
     {
         _suggestRow.Children.Clear();
         _suggestFocus.Clear();
-        var list = (_req.Suggestions ?? [])
+        var list = (_req.Secret ? [] : _req.Suggestions ?? [])
             .Where(s => !string.IsNullOrWhiteSpace(s) && s != _text &&
                         (_text.Length == 0 || _selectAll || s.StartsWith(_text, StringComparison.OrdinalIgnoreCase)))
             .Distinct().Take(5).ToList();
@@ -253,18 +254,22 @@ public sealed class OnScreenKeyboard : Grid, IInputLayer
         Render();
     }
 
+    /// <summary>What the field shows: the text, or a dot per character for a password
+    /// (a TV is a shared screen).</summary>
+    private string Shown(string s) => _req.Secret ? new string('•', s.Length) : s;
+
     private void Render()
     {
         _field.Inlines ??= new InlineCollection();
         _field.Inlines.Clear();
         if (_selectAll)
         {
-            _field.Inlines.Add(new Run(_text) { Background = T.WithAlpha(T.AccentColor, 0.55) });
+            _field.Inlines.Add(new Run(Shown(_text)) { Background = T.WithAlpha(T.AccentColor, 0.55) });
             return;
         }
-        _field.Inlines.Add(new Run(_text[.._caret]));
+        _field.Inlines.Add(new Run(Shown(_text[.._caret])));
         _field.Inlines.Add(new Run("|") { Foreground = _caretOn ? T.Accent : Brushes.Transparent, FontWeight = FontWeight.Light });
-        _field.Inlines.Add(new Run(_text[_caret..]));
+        _field.Inlines.Add(new Run(Shown(_text[_caret..])));
         if (_text.Length == 0) _field.Inlines.Add(new Run(" Type with the controller") { Foreground = T.TextFaint });
     }
 

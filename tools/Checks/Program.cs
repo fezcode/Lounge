@@ -72,6 +72,7 @@ Check("Menu opens settings; the theme changes from the controller", ChangeTheme)
             Check("A button is remapped on the Remote screen", RemapButton);
             Check("Holding A picks a home tile up and the D-pad moves it", MoveTile);
             Check("Every theme renders its own home", ThemesDiffer);
+Check("Screening Room's home animates without errors as focus moves", ScreeningHome);
             Check("The keyboard fits on screen in every layer", KeyboardFits);
             Check("While an app runs, only the return chord is heard", DormantChord);
             Check("When a launched app quits by itself, Lounge listens again", DormantRealProcess);
@@ -189,6 +190,33 @@ Check("In Now Playing, A presses the focused button and song", NowPlayingButtons
         Pump(30);
         Assert(!_w.Overlays.OfType<ModalLayer>().Any(), "B did not close the Power menu");
         L.Settings.Set(K.ConfirmExit, true);
+    }
+
+    private static void ScreeningHome()
+    {
+        // 1.0.8 froze here: the focus underline's spring overshot below zero width, threw
+        // inside the animation loop, and every animation stopped.
+        L.Settings.Set(K.Theme, "screening");
+        _w.ApplyTheme(rebuild: true);
+        Pump(20);
+        var before = Motion.Failures;
+        // Real springs for this check: with motion off they snap and never overshoot.
+        Motion.Enabled = true;
+        try
+        {
+        var start = _w.Top!.Focused;
+        for (int i = 0; i < 6; i++) { Press(PadButton.DPadDown); Pump(12); }
+        for (int i = 0; i < 6; i++) { Press(PadButton.DPadUp); Pump(12); }
+        Pump(60);                                   // let every spring settle, overshoot included
+        Assert(Motion.Failures == before, $"{Motion.Failures - before} animation(s) failed");
+        Assert(_w.Top.Focused == start, "focus did not come back to the first entry");
+        Press(PadButton.DPadDown);
+        Pump(10);
+        Assert(_w.Top.Focused != start, "focus stopped moving");
+        }
+        finally { Motion.Enabled = false; Pump(60); }
+        L.Settings.Set(K.Theme, "aurora");
+        _w.ApplyTheme(rebuild: true);
     }
 
     private static void ChangeTheme()

@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Lounge.Core.Launch;
@@ -85,7 +85,11 @@ public sealed class TileStore
         if (!File.Exists(_path)) return Defaults();
         try
         {
-            return JsonSerializer.Deserialize<List<Tile>>(File.ReadAllText(_path), Json) ?? Defaults();
+            var tiles = JsonSerializer.Deserialize<List<Tile>>(File.ReadAllText(_path), Json) ?? Defaults();
+            // Saved before 1.0.9: Prime Video was embedded, where Amazon never lets it play.
+            foreach (var t in tiles.Where(t => t.IsWeb && t.Target.Contains("primevideo.com", StringComparison.OrdinalIgnoreCase)))
+                t.OpenExternally = true;
+            return tiles;
         }
         catch (JsonException)
         {
@@ -106,7 +110,9 @@ public sealed class TileStore
         new() { Id = "youtube", Kind = TileKind.Web, Name = "YouTube", Target = "https://www.youtube.com/tv", UserAgent = TvUserAgent, Color = "#FF0033" },
         new() { Id = "netflix", Kind = TileKind.Web, Name = "Netflix", Target = "https://www.netflix.com/browse", Color = "#E50914", AllowMouse = true },
         new() { Id = "disney", Kind = TileKind.Web, Name = "Disney+", Target = "https://www.disneyplus.com/", Color = "#113CCF", AllowMouse = true },
-        new() { Id = "prime", Kind = TileKind.Web, Name = "Prime Video", Target = "https://www.primevideo.com/", Color = "#00A8E1", AllowMouse = true },
+        // Amazon plays Prime Video only in full browsers, not embedded ones (the page loads
+        // but play stays greyed out), so it opens in Edge with the controller mouse on.
+        new() { Id = "prime", Kind = TileKind.Web, Name = "Prime Video", Target = "https://www.primevideo.com/", Color = "#00A8E1", AllowMouse = true, OpenExternally = true },
         new() { Id = "twitch", Kind = TileKind.Web, Name = "Twitch", Target = "https://www.twitch.tv/", Color = "#9146FF", AllowMouse = true },
     ];
 

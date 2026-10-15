@@ -43,6 +43,9 @@ public static class Motion
         }
     }
 
+    /// <summary>Animations that threw and were dropped (checks assert this stays 0).</summary>
+    public static int Failures { get; private set; }
+
     private static void Tick()
     {
         _scheduled = false;
@@ -52,7 +55,18 @@ public static class Motion
         for (int i = Active.Count - 1; i >= 0; i--)
         {
             var s = Active[i];
-            if (s.Step(dt)) Active.RemoveAt(i);
+            try
+            {
+                if (s.Step(dt)) Active.RemoveAt(i);
+            }
+            catch (Exception e)
+            {
+                // One bad animation must not stop the others: without this the next frame
+                // was never scheduled and every animation froze mid-way.
+                Active.RemoveAt(i);
+                Failures++;
+                Lounge.Shell.Log.Error("animation", e);
+            }
         }
         if (Active.Count > 0) Schedule();
     }

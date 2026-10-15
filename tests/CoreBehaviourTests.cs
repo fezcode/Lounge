@@ -259,6 +259,20 @@ public class LaunchTests
     }
 
     [Fact]
+    public void Prime_Video_opens_in_the_full_browser_even_from_tiles_saved_before()
+    {
+        // Amazon never plays Prime Video in an embedded browser (play stays greyed out).
+        Assert.True(TileStore.Defaults().Single(t => t.Id == "prime").OpenExternally);
+        using var dir = new TempDir();
+        var old = TileStore.Defaults();
+        old.Single(t => t.Id == "prime").OpenExternally = false;
+        File.WriteAllText(dir.File("tiles.json"), System.Text.Json.JsonSerializer.Serialize(old));
+        var store = new TileStore(dir.File("tiles.json"));
+        Assert.True(store.Find("prime")!.OpenExternally);
+        Assert.False(store.Find("netflix")!.OpenExternally);
+    }
+
+    [Fact]
     public void Pinned_tiles_come_first_and_move_among_themselves()
     {
         using var dir = new TempDir();

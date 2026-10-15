@@ -273,3 +273,4 @@ public class KeymapTests
                 Assert.Contains(Act.Catalog, a => a.Id == b.Action);
     }
 }
+
