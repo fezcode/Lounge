@@ -144,7 +144,8 @@ public static class HomeModel
         {
             new("Open", "play", () => Launcher.Launch(t)),
         };
-        if (t.IsWeb) items.Add(new MenuEntry("Open in full browser", "external", () => Launcher.Launch(t.Clone().Also(c => c.OpenExternally = true))));
+        if (t.IsWeb && !t.OpenExternally) items.Add(new MenuEntry("Open in full browser", "external", () => Launcher.Launch(t.Clone().Also(c => c.OpenExternally = true))));
+        if (t.IsWeb && t.OpenExternally) items.Add(new MenuEntry("Open inside Lounge", "tv", () => Launcher.Launch(t.Clone().Also(c => c.OpenExternally = false))));
         items.Add(new MenuEntry("Edit", "pencil", () => L.Window.Push(new TileEditorScreen(t))));
         items.Add(new MenuEntry(t.Pinned ? "Unpin" : "Pin to the front", "star", () => { L.Tiles.SetPinned(t.Id, !t.Pinned); L.Window.Find<HomeScreen>()?.Rebuild(); }));
         items.Add(new MenuEntry("Move (or hold A)", "move", () => L.Window.Find<HomeScreen>()?.StartMove(t)));
@@ -154,10 +155,13 @@ public static class HomeModel
         L.Window.Menu(t.Name, items);
     }
 
-    /// <summary>The picture for a tile: a chosen image, else the app's own icon (cached).</summary>
+    /// <summary>The picture for a tile: a chosen image, else the app's own icon, or for a
+    /// website the icon the site publishes for itself (both cached).</summary>
     public static string? TileArt(Tile t)
     {
         if (!string.IsNullOrEmpty(t.Icon) && File.Exists(t.Icon)) return t.Icon;
+        if (t.Logo.Length > 0 && BundledLogo(t.Logo) is { } logo) return logo;
+        if (t.IsWeb) return L.Preview ? null : SiteIcons.Get(t.Target, AppPaths.Thumbs);
         string? source = t.Kind switch
         {
             TileKind.App => t.Target,
@@ -186,6 +190,70 @@ public static class HomeModel
         return null;
     }
 
+    /// <summary>A wordmark from Assets/Logos, copied out once so the image cache can load it by path.</summary>
+    private static string? BundledLogo(string name)
+    {
+        var file = Path.Combine(AppPaths.Thumbs, $"logo-{name}.png");
+        if (File.Exists(file)) return file;
+        try
+        {
+            var uri = new Uri($"avares://{typeof(HomeModel).Assembly.GetName().Name}/Assets/Logos/{name}.png");
+            using var src = Avalonia.Platform.AssetLoader.Open(uri);
+            using var dst = File.Create(file);
+            src.CopyTo(dst);
+            return file;
+        }
+        catch (Exception e) when (e is FileNotFoundException or IOException or UnauthorizedAccessException) { return null; }
+    }
+
+    /// <summary>A website's tile: its own icon, rounded like an app icon, on dark glass lit
+    /// from below by the brand colour. (On a plain brand-colour wash a red logo on red,
+    /// like YouTube's, would disappear.)</summary>
+    private static Control SiteCard(HomeEntry e, double w, double h)
+    {
+        Color brand;
+        try { brand = T.Tone(Color.Parse(e.Color)); } catch (FormatException) { brand = Colors.SlateGray; }
+        var grid = new Grid { Width = w, Height = h, Background = new SolidColorBrush(Color.FromRgb(18, 18, 22)) };
+        grid.Children.Add(new Border
+        {
+            Background = new RadialGradientBrush
+            {
+                Center = new Avalonia.RelativePoint(0.5, 1.05, Avalonia.RelativeUnit.Relative),
+                GradientOrigin = new Avalonia.RelativePoint(0.5, 1.05, Avalonia.RelativeUnit.Relative),
+                RadiusX = new Avalonia.RelativeScalar(0.75, Avalonia.RelativeUnit.Relative),
+                RadiusY = new Avalonia.RelativeScalar(0.9, Avalonia.RelativeUnit.Relative),
+                GradientStops =
+                {
+                    new GradientStop(Color.FromArgb(150, brand.R, brand.G, brand.B), 0),
+                    new GradientStop(Color.FromArgb(0, brand.R, brand.G, brand.B), 1),
+                },
+            },
+        });
+        if (e.Tile?.Logo.Length > 0)
+        {
+            // A wordmark: wide and unclipped, sized to the tile.
+            grid.Children.Add(ImageCache.Art(e.Art!, w * 0.5, h * 0.42, stretch: Stretch.Uniform).Also(a =>
+            {
+                a.Background = Brushes.Transparent;
+                a.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center;
+                a.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center;
+            }));
+            return grid;
+        }
+        var size = Math.Min(w, h) * 0.5;
+        grid.Children.Add(new Border
+        {
+            Width = size, Height = size,
+            CornerRadius = new Avalonia.CornerRadius(size * 0.22),
+            ClipToBounds = true,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            BoxShadow = new BoxShadows(new BoxShadow { OffsetY = size * 0.06, Blur = size * 0.25, Color = Color.FromArgb(120, 0, 0, 0) }),
+            Child = ImageCache.Art(e.Art!, size, size, stretch: Stretch.Uniform).Also(a => a.Background = Brushes.Transparent),
+        });
+        return grid;
+    }
+
     /// <summary>The art area of an entry: picture, app icon on a colour wash, or glyph.</summary>
     public static Control Art(HomeEntry e, double w, double h, bool iconStyle = false, bool corner = false)
     {
@@ -193,6 +261,7 @@ public static class HomeModel
         if (e.Tile is not null)
         {
             if (e.Art is null) return Ui.Monogram(e.Title, e.Color, Math.Min(w, h)).Also(b => { b.Width = w; b.Height = h; });
+            if (e.Tile.IsWeb) return SiteCard(e, w, h);
             // App icons are small square pictures: centre them on their brand colour.
             var bg = new Border { Width = w, Height = h, Background = Wash(e.Color) };
             var size = Math.Min(w, h) * 0.56;

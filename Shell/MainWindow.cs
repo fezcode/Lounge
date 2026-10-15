@@ -119,6 +119,8 @@ public sealed class MainWindow : Window
         };
         L.Dormant.ModeChanged += _ => { UpdateContext(); UpdateAmbient(); };
         L.Dormant.LaunchedAppExited += () => { ComeBack(); Toast("Welcome back", "home"); };
+        // A website's icon arrived: show it on its tile.
+        SiteIcons.Updated += () => Dispatcher.UIThread.Post(() => { if (Top is HomeScreen h) h.Rebuild(); });
         L.Settings.Changed += OnSetting;
         L.Player.StateChanged += _ => Dispatcher.UIThread.Post(() => { UpdateAmbient(); UpdateNowPlaying(); });
     }
@@ -607,6 +609,7 @@ public sealed class MainWindow : Window
         if (web >= 0 && web + 1 < args.Length)
             Push(new WebScreen(L.Tiles.All.FirstOrDefault(t => t.IsWeb && t.Target == args[web + 1])?.Clone()
                 ?? new Lounge.Core.Launch.Tile { Kind = Lounge.Core.Launch.TileKind.Web, Name = "Web check", Target = args[web + 1], AllowMouse = true }));
+        if (args.Contains("--web-apps")) Push(new AppsScreen(web: true));
         var files = Array.IndexOf(args, "--files");
         if (files >= 0 && files + 1 < args.Length) Push(new FilesScreen(args[files + 1]));
         var lone = args.FirstOrDefault(a => !a.StartsWith("--") && (File.Exists(a) || Directory.Exists(a)));

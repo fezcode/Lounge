@@ -41,7 +41,9 @@ public sealed class WebViewHost : NativeControlHost
     {
         try
         {
-            var options = new CoreWebView2EnvironmentOptions("--autoplay-policy=no-user-gesture-required");
+            var args = "--autoplay-policy=no-user-gesture-required";
+            if (SelfCheck.Active && Environment.GetEnvironmentVariable("LOUNGE_WEB_ARGS") is { Length: > 0 } extra) args += " " + extra;
+            var options = new CoreWebView2EnvironmentOptions(args);
             var env = await CoreWebView2Environment.CreateAsync(null, AppPaths.WebView, options);
             Controller = await env.CreateCoreWebView2ControllerAsync(_hwnd);
             Controller.DefaultBackgroundColor = System.Drawing.Color.Black;
@@ -141,6 +143,8 @@ public sealed class WebScreen : Screen
     private readonly Border _loading;
     private bool _drmChecked;
     private WebPad? _pad;
+    private WebDiagnostics? _diag;
+    private bool _described;
     private bool _reported;
     private readonly List<string> _failedRequests = new();
     private bool _helped, _typing;
@@ -180,8 +184,11 @@ public sealed class WebScreen : Screen
                 };
             }
             _pad = pad;
+            if (L.Settings.Bool(K.WebPresentAsBrowser)) await PresentAsBrowser(c.CoreWebView2);
+            if (L.Settings.Bool(K.WebDiagnostics)) _diag = await WebDiagnostics.Start(c.CoreWebView2, _tile.Name);
             c.CoreWebView2.NavigationCompleted += (_, a) => Dispatcher.UIThread.Post(async () =>
             {
+                if (_diag is { } diag && !_described) { _described = true; await diag.Describe(c.CoreWebView2); _ = pad.Hint("Recording playback diagnostics (Settings > Web)", 5000); }
                 _loading.IsVisible = false;
                 if (!a.IsSuccess) L.Window.Toast($"{_tile.Name} didn't load ({a.WebErrorStatus}).", "warning");
                 else CheckDrm(c);
@@ -222,6 +229,28 @@ public sealed class WebScreen : Screen
           try { await navigator.requestMediaKeySystemAccess('com.microsoft.playready.recommendation', cfg); return 'playready'; } catch (e) {}
           return 'blocked'; })()
         """;
+
+    /// <summary>Every copy-protection system and robustness level the browser offers, and its brands.</summary>
+    public const string DrmMatrixProbe = """
+            (async () => {
+              const out = [];
+              const vid = 'video/mp4; codecs="avc1.640028"';
+              const tries = [
+                ['com.widevine.alpha', ''], ['com.widevine.alpha', 'SW_SECURE_DECODE'], ['com.widevine.alpha', 'HW_SECURE_ALL'],
+                ['com.microsoft.playready.recommendation', ''], ['com.microsoft.playready.recommendation', '2000'],
+                ['com.microsoft.playready.recommendation', '3000'], ['com.microsoft.playready.recommendation.3000', ''],
+                ['com.microsoft.playready.hardware', ''], ['com.microsoft.playready', '']];
+              for (const [ks, rob] of tries) {
+                try {
+                  await navigator.requestMediaKeySystemAccess(ks, [{ initDataTypes: ['cenc'], videoCapabilities: [{ contentType: vid, robustness: rob }], audioCapabilities: [{ contentType: 'audio/mp4; codecs="mp4a.40.2"' }] }]);
+                  out.push(ks + (rob ? ' ' + rob : '') + ': yes');
+                } catch (e) { out.push(ks + (rob ? ' ' + rob : '') + ': no'); }
+              }
+              const b = navigator.userAgentData ? navigator.userAgentData.brands.map(x => x.brand + ' ' + x.version).join(', ') : 'n/a';
+              out.push('brands: ' + b);
+              return out.join(' | ');
+            })()
+            """;
 
     /// <summary>ExecuteScriptAsync returns a Promise as "{}", so the result is parked on
     /// the window and read back until it arrives.</summary>
@@ -296,7 +325,7 @@ public sealed class WebScreen : Screen
         var video = Eval(await c.CoreWebView2.ExecuteScriptAsync(
             "(() => { const v = document.querySelector('video'); if (!v) return 'no video element'; " +
             "return `paused=${v.paused} time=${v.currentTime.toFixed(1)} ready=${v.readyState} err=${v.error ? v.error.code + ':' + v.error.message : 'none'} src=${(v.currentSrc || '').slice(0, 40)}`; })()"));
-        var text = Eval(await c.CoreWebView2.ExecuteScriptAsync("(document.body ? document.body.innerText : '').replace(/\\s+/g, ' ').slice(0, 300)"));
+        var text = Eval(await c.CoreWebView2.ExecuteScriptAsync("(document.body ? document.body.innerText : '').replace(/\\s+/g, ' ').slice(0, 2000)"));
         await pad.Hint(pad.HelpText, 9000);
         await Task.Delay(500);
         using (var png = File.Create(Lounge.Shell.SelfCheck.PathFor("web.png")))
@@ -306,26 +335,7 @@ public sealed class WebScreen : Screen
         var pads = Eval(await c.CoreWebView2.ExecuteScriptAsync("Array.from(navigator.getGamepads()).filter(p => p).length.toString()"));
         var drm = await EvalPromise(c.CoreWebView2, DrmProbe);
         // What a streaming site sees: each DRM system and robustness level, and the browser's brands.
-        var drmMatrix = await EvalPromise(c.CoreWebView2, """
-            (async () => {
-              const out = [];
-              const vid = 'video/mp4; codecs="avc1.640028"';
-              const tries = [
-                ['com.widevine.alpha', ''], ['com.widevine.alpha', 'SW_SECURE_DECODE'], ['com.widevine.alpha', 'HW_SECURE_ALL'],
-                ['com.microsoft.playready.recommendation', ''], ['com.microsoft.playready.recommendation', '2000'],
-                ['com.microsoft.playready.recommendation', '3000'], ['com.microsoft.playready.recommendation.3000', ''],
-                ['com.microsoft.playready.hardware', ''], ['com.microsoft.playready', '']];
-              for (const [ks, rob] of tries) {
-                try {
-                  await navigator.requestMediaKeySystemAccess(ks, [{ initDataTypes: ['cenc'], videoCapabilities: [{ contentType: vid, robustness: rob }], audioCapabilities: [{ contentType: 'audio/mp4; codecs="mp4a.40.2"' }] }]);
-                  out.push(ks + (rob ? ' ' + rob : '') + ': yes');
-                } catch (e) { out.push(ks + (rob ? ' ' + rob : '') + ': no'); }
-              }
-              const b = navigator.userAgentData ? navigator.userAgentData.brands.map(x => x.brand + ' ' + x.version).join(', ') : 'n/a';
-              out.push('brands: ' + b);
-              return out.join(' | ');
-            })()
-            """, 15000);
+        var drmMatrix = await EvalPromise(c.CoreWebView2, DrmMatrixProbe, 15000);
         Lounge.Shell.SelfCheck.Report("web", new
         {
             loaded, title, gamepadApi, padsVisibleToPage = pads, drm, drmMatrix,
@@ -414,6 +424,37 @@ public sealed class WebScreen : Screen
         else Leave();
     }
 
+    /// <summary>"Present as a regular browser": WebView2 announces itself as "Microsoft Edge
+    /// WebView2" in its brand list, which some streaming sites refuse. Pages are shown the
+    /// list without that entry (navigator.userAgentData) and requests carry it without it
+    /// (the Sec-CH-UA headers). The engine and its copy protection are unchanged.</summary>
+    private static async Task PresentAsBrowser(CoreWebView2 web)
+    {
+        await web.AddScriptToExecuteOnDocumentCreatedAsync("""
+            (() => {
+              const d = navigator.userAgentData;
+              if (!d) return;
+              const strip = list => (list || []).filter(b => !/webview/i.test(b.brand));
+              const proto = Object.getPrototypeOf(d);
+              const brands = strip(d.brands);
+              Object.defineProperty(proto, 'brands', { get: () => brands, configurable: true });
+              const high = proto.getHighEntropyValues;
+              proto.getHighEntropyValues = function (hints) {
+                return high.call(this, hints).then(v => { if (v.brands) v.brands = strip(v.brands); if (v.fullVersionList) v.fullVersionList = strip(v.fullVersionList); return v; });
+              };
+              const json = proto.toJSON;
+              if (json) proto.toJSON = function () { const o = json.call(this); o.brands = strip(o.brands); return o; };
+            })();
+            """);
+        web.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
+        web.WebResourceRequested += (_, a) =>
+        {
+            var headers = a.Request.Headers;
+            foreach (var name in new[] { "sec-ch-ua", "sec-ch-ua-full-version-list" })
+                if (headers.Contains(name)) headers.SetHeader(name, Lounge.Core.Web.WebText.StripWebViewBrand(headers.GetHeader(name)));
+        };
+    }
+
     private void Leave()
     {
         if (L.Window.Find<WebScreen>() == this) L.Window.Remove(this);
@@ -421,12 +462,14 @@ public sealed class WebScreen : Screen
 
     private void OnPageMessage(string? json)
     {
-        if (json is null || _pad is not { PointerMode: true }) return;
+        if (json is null) return;
         try
         {
             using var doc = System.Text.Json.JsonDocument.Parse(json);
             var r = doc.RootElement;
-            if (r.GetProperty("kind").GetString() != "text") return;
+            var kind = r.GetProperty("kind").GetString();
+            if (kind == "diag") { _diag?.Write(r.GetProperty("line").GetString() ?? ""); return; }
+            if (kind != "text" || _pad is not { PointerMode: true }) return;
             var password = r.TryGetProperty("password", out var pw) && pw.GetBoolean();
             Type(r.GetProperty("label").GetString() ?? "", password ? "" : r.GetProperty("value").GetString() ?? "", r.GetProperty("search").GetBoolean(), password);
         }

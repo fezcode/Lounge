@@ -24,10 +24,16 @@ public sealed class AppsScreen : BrowseScreen
         _hidden = showHidden;
         Build();
         L.Tiles.Changed += Rebuild;
+        Lounge.Platform.SiteIcons.Updated += Rebuild;   // a site's icon arrived
     }
 
     private void Rebuild() => Avalonia.Threading.Dispatcher.UIThread.Post(Build);
-    public override void OnClosed() => L.Tiles.Changed -= Rebuild;
+
+    public override void OnClosed()
+    {
+        L.Tiles.Changed -= Rebuild;
+        Lounge.Platform.SiteIcons.Updated -= Rebuild;
+    }
 
     private void Build()
     {

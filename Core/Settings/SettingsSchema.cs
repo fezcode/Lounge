@@ -104,6 +104,8 @@ public static class K
     public const string CursorSpeed = "web.cursorSpeed";
     public const string DrmHint = "web.drmHint";
     public const string ExternalBrowser = "web.externalBrowser";
+    public const string WebDiagnostics = "web.diagnostics";
+    public const string WebPresentAsBrowser = "web.presentAsBrowser";
 
     // Launcher
     public const string ReturnHoldMs = "launcher.returnHoldMs";
@@ -303,6 +305,10 @@ public static class SettingsSchema
             Int(K.CursorSpeed, "Web", "Pointer speed", 8, 1, 20, 1),
             Toggle(K.DrmHint, "Web", "Suggest the full browser when video is blocked", true),
             Choice(K.ExternalBrowser, "Web", "Full browser", "edge", C("edge", "Microsoft Edge", "chrome", "Google Chrome", "default", "System default")),
+            Toggle(K.WebPresentAsBrowser, "Web", "Present as a regular browser", false,
+                "Sites see Microsoft Edge instead of an app's built-in browser. Some streaming sites refuse built-in browsers. Applies to pages opened after the change."),
+            Toggle(K.WebDiagnostics, "Web", "Record playback diagnostics", false,
+                "Writes what a site's video player reports (errors, protection and licence results, blocked requests) to Lounge's logs folder. Never records passwords, form contents, cookies or full addresses."),
 
             // ---- Launcher
             Int(K.ReturnHoldMs, "Launcher", "Return chord hold", 1000, 500, 3000, 100, " ms", "Hold View + Menu this long to come back to Lounge from any app."),

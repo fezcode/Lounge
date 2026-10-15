@@ -31,6 +31,8 @@ public sealed class Tile
     public string Icon { get; set; } = "";
     /// <summary>Brand colour used for the monogram and tile glow.</summary>
     public string Color { get; set; } = "#3A3A4A";
+    /// <summary>A wordmark bundled in Assets/Logos ("prime"), shown wide on the tile.</summary>
+    public string Logo { get; set; } = "";
     public string UserAgent { get; set; } = "";
     public bool AllowMouse { get; set; }
     public bool OpenExternally { get; set; }
@@ -86,9 +88,15 @@ public sealed class TileStore
         try
         {
             var tiles = JsonSerializer.Deserialize<List<Tile>>(File.ReadAllText(_path), Json) ?? Defaults();
+            // Wordmarks bundled since 1.0.10 for the default streaming tiles.
+            foreach (var t in tiles.Where(t => t.Logo.Length == 0))
+                t.Logo = Defaults().FirstOrDefault(d => d.Id == t.Id && d.Target == t.Target)?.Logo ?? "";
             // Saved before 1.0.9: Prime Video was embedded, where Amazon never lets it play.
             foreach (var t in tiles.Where(t => t.IsWeb && t.Target.Contains("primevideo.com", StringComparison.OrdinalIgnoreCase)))
+            {
                 t.OpenExternally = true;
+                if (t.Logo.Length == 0) t.Logo = "prime";
+            }
             return tiles;
         }
         catch (JsonException)
@@ -108,11 +116,11 @@ public sealed class TileStore
         new() { Id = "cogas", Kind = TileKind.Cogas, Name = "Cogas", Color = "#6C4BFF", IsGame = true },
         new() { Id = "steam", Kind = TileKind.Protocol, Name = "Steam Big Picture", Target = "steam://open/bigpicture", Color = "#1B2838", IsGame = true },
         new() { Id = "youtube", Kind = TileKind.Web, Name = "YouTube", Target = "https://www.youtube.com/tv", UserAgent = TvUserAgent, Color = "#FF0033" },
-        new() { Id = "netflix", Kind = TileKind.Web, Name = "Netflix", Target = "https://www.netflix.com/browse", Color = "#E50914", AllowMouse = true },
+        new() { Id = "netflix", Kind = TileKind.Web, Name = "Netflix", Target = "https://www.netflix.com/browse", Color = "#E50914", AllowMouse = true, Logo = "netflix" },
         new() { Id = "disney", Kind = TileKind.Web, Name = "Disney+", Target = "https://www.disneyplus.com/", Color = "#113CCF", AllowMouse = true },
         // Amazon plays Prime Video only in full browsers, not embedded ones (the page loads
         // but play stays greyed out), so it opens in Edge with the controller mouse on.
-        new() { Id = "prime", Kind = TileKind.Web, Name = "Prime Video", Target = "https://www.primevideo.com/", Color = "#00A8E1", AllowMouse = true, OpenExternally = true },
+        new() { Id = "prime", Kind = TileKind.Web, Name = "Prime Video", Target = "https://www.primevideo.com/", Color = "#1A98FF", AllowMouse = true, OpenExternally = true, Logo = "prime" },
         new() { Id = "twitch", Kind = TileKind.Web, Name = "Twitch", Target = "https://www.twitch.tv/", Color = "#9146FF", AllowMouse = true },
     ];
 
