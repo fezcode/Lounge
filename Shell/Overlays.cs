@@ -139,7 +139,8 @@ public sealed class ModalLayer : Grid, IInputLayer
             var it = items[i];
             var label = Ui.Text(it.Label, T.Body, it.Danger ? T.Danger : T.Text, FontWeight.SemiBold);
             var row = Ui.Grid("Auto,*,Auto", "Auto");
-            row.Children.Add(Icons.Make(it.Icon, 30, it.Danger ? T.Danger : T.Text).Margin(0, 0, 20, 0).Col(0));
+            if (it.Icon.Length > 0)   // choice lists have none: the selected one is ticked on the right
+                row.Children.Add(Icons.Make(it.Icon, 30, it.Danger ? T.Danger : T.Text).Margin(0, 0, 20, 0).Col(0));
             var texts = Ui.V(2, label);
             if (it.Detail is { } d) texts.Children.Add(Ui.Muted(d));
             row.Children.Add(texts.Col(1).Align(HorizontalAlignment.Stretch, VerticalAlignment.Center));

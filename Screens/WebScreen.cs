@@ -55,6 +55,11 @@ public sealed class WebViewHost : NativeControlHost
             // Nothing typed into a site is kept by Lounge's browser: no saved passwords, no form history.
             s.IsPasswordAutosaveEnabled = false;
             s.IsGeneralAutofillEnabled = false;
+            // No window.chrome.webview in pages: its presence (and probing its host objects)
+            // tells a site it is inside an app, and Prime Video then disables Play. Pages
+            // leave messages in a hidden queue that Lounge reads instead (WebScreen.Drain).
+            s.IsWebMessageEnabled = false;
+            s.AreHostObjectsAllowed = false;
             if (!string.IsNullOrEmpty(_tile.UserAgent)) s.UserAgent = _tile.UserAgent;
             else if (L.Settings.String(K.WebIdentity) == "chrome") s.UserAgent = Lounge.Core.Web.WebText.ChromeUserAgent(s.UserAgent);
             if (SelfCheck.Active && Environment.GetEnvironmentVariable("LOUNGE_WEB_UA") is { Length: > 0 } ua) s.UserAgent = ua;
@@ -148,6 +153,8 @@ public sealed class WebScreen : Screen
     private bool _drmChecked;
     private WebPad? _pad;
     private WebDiagnostics? _diag;
+    private DispatcherTimer? _drain;
+    private bool _draining;
     private bool _described;
     private bool _reported;
     private readonly List<string> _failedRequests = new();
@@ -204,12 +211,8 @@ public sealed class WebScreen : Screen
             c.CoreWebView2.NewWindowRequested += (_, a) => { a.Handled = true; c.CoreWebView2.Navigate(a.Uri); };
             // A page that closes itself (YouTube TV's "Exit") brings Lounge back.
             c.CoreWebView2.WindowCloseRequested += (_, _) => Dispatcher.UIThread.Post(Leave);
-            c.CoreWebView2.WebMessageReceived += (_, a) =>
-            {
-                string? json;
-                try { json = a.TryGetWebMessageAsString(); } catch (ArgumentException) { return; }
-                Dispatcher.UIThread.Post(() => OnPageMessage(json));
-            };
+            _drain = new DispatcherTimer(TimeSpan.FromMilliseconds(250), DispatcherPriority.Background, async (_, _) => await Drain(c.CoreWebView2));
+            _drain.Start();
             c.CoreWebView2.Navigate(_tile.Target);
         };
         _host.Failed += why => Dispatcher.UIThread.Post(() =>
@@ -261,14 +264,19 @@ public sealed class WebScreen : Screen
     public static async Task<string> EvalPromise(CoreWebView2 web, string promiseExpression, int timeoutMs = 4000)
     {
         var slot = "__lounge" + Guid.NewGuid().ToString("N")[..8];
-        await web.ExecuteScriptAsync($"window.{slot} = undefined; Promise.resolve({promiseExpression}).then(r => window.{slot} = String(r), e => window.{slot} = 'error:' + e);");
-        for (int waited = 0; waited < timeoutMs; waited += 100)
+        // The slot is hidden from enumeration and removed once read, so pages can't spot it.
+        await web.ExecuteScriptAsync($"Object.defineProperty(window, '{slot}', {{ value: undefined, writable: true, configurable: true, enumerable: false }}); Promise.resolve({promiseExpression}).then(r => window.{slot} = String(r), e => window.{slot} = 'error:' + e);");
+        try
         {
-            var r = await web.ExecuteScriptAsync($"window.{slot} === undefined ? null : window.{slot}");
-            if (r != "null") return System.Text.Json.JsonSerializer.Deserialize<string>(r) ?? "";
-            await Task.Delay(100);
+            for (int waited = 0; waited < timeoutMs; waited += 100)
+            {
+                var r = await web.ExecuteScriptAsync($"window.{slot} === undefined ? null : window.{slot}");
+                if (r != "null") return System.Text.Json.JsonSerializer.Deserialize<string>(r) ?? "";
+                await Task.Delay(100);
+            }
+            return "timeout";
         }
-        return "timeout";
+        finally { _ = web.ExecuteScriptAsync($"delete window.{slot}"); }
     }
 
     private async void CheckDrm(CoreWebView2Controller c)
@@ -325,6 +333,8 @@ public sealed class WebScreen : Screen
             walk.Add(step + " -> " + Eval(await c.CoreWebView2.ExecuteScriptAsync("(() => { const all = document.querySelectorAll('.zylon-focus'); const e = all.length ? all[all.length - 1] : document.activeElement; return e ? (e.innerText || e.tagName).replace(/\\s+/g, ' ').slice(0, 40) : '' })()")));
         }
         var injected = Eval(await c.CoreWebView2.ExecuteScriptAsync("String(!!window.__lounge)"));
+        // What a page can see of the app around it: nothing, ideally.
+        var appBridge = Eval(await c.CoreWebView2.ExecuteScriptAsync("String(!!(window.chrome && window.chrome.webview)) + ' / visible globals: ' + Object.keys(window).filter(k => /lounge/i.test(k)).join(',')"));
         // Whether a video on the page is actually playing (not just the page loading).
         var video = Eval(await c.CoreWebView2.ExecuteScriptAsync(
             "(() => { const v = document.querySelector('video'); if (!v) return 'no video element'; " +
@@ -343,7 +353,7 @@ public sealed class WebScreen : Screen
         Lounge.Shell.SelfCheck.Report("web", new
         {
             loaded, title, gamepadApi, padsVisibleToPage = pads, drm, drmMatrix,
-            pointerMode = pad.PointerMode, injected, keysReceived = keys, focusBefore, focusAfter, trustedClicks = clicks, video, text, walk, geometry = _host.Geometry(), failedRequests = _failedRequests.ToArray().TakeLast(60).ToList(),
+            pointerMode = pad.PointerMode, injected, keysReceived = keys, focusBefore, focusAfter, trustedClicks = clicks, appBridge, video, text, walk, geometry = _host.Geometry(), failedRequests = _failedRequests.ToArray().TakeLast(60).ToList(),
             errors = Eval(await c.CoreWebView2.ExecuteScriptAsync("(window.__loungeErrors || []).slice(-15).join(' | ')")),
             userAgent = Eval(await c.CoreWebView2.ExecuteScriptAsync("navigator.userAgent")),
             zoom = c.ZoomFactor,
@@ -467,6 +477,24 @@ public sealed class WebScreen : Screen
         if (L.Window.Find<WebScreen>() == this) L.Window.Remove(this);
     }
 
+    /// <summary>Reads the messages pages leave in their hidden queue (a focused text field,
+    /// diagnostic lines). Pages get no app bridge, so this is how they reach Lounge.</summary>
+    private async Task Drain(CoreWebView2 web)
+    {
+        if (_draining) return;
+        _draining = true;
+        try
+        {
+            var raw = await web.ExecuteScriptAsync("window.__loungeQ && window.__loungeQ.length ? JSON.stringify(window.__loungeQ.splice(0)) : ''");
+            var json = System.Text.Json.JsonSerializer.Deserialize<string>(raw);
+            if (!string.IsNullOrEmpty(json))
+                foreach (var message in System.Text.Json.JsonSerializer.Deserialize<string[]>(json) ?? [])
+                    OnPageMessage(message);
+        }
+        catch (Exception e) when (e is System.Text.Json.JsonException or InvalidOperationException or COMException or ArgumentException) { }
+        finally { _draining = false; }
+    }
+
     private void OnPageMessage(string? json)
     {
         if (json is null) return;
@@ -560,6 +588,7 @@ public sealed class WebScreen : Screen
 
     public override void OnClosed()
     {
+        _drain?.Stop();
         if (L.Window.CursorMode) L.Window.ToggleCursor();
     }
 }

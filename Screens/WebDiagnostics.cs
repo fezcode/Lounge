@@ -26,10 +26,15 @@ public sealed partial class WebDiagnostics
     private const string PageScript = """
         (() => {
           if (window.__loungeDiag) return;
-          window.__loungeDiag = true;
+          Object.defineProperty(window, '__loungeDiag', { value: true, enumerable: false });
           // Nothing is reported while a password field has focus.
           const typingSecret = () => { const a = document.activeElement; return !!a && a.tagName === 'INPUT' && a.type === 'password'; };
-          const send = m => { if (typingSecret()) return; try { window.chrome.webview.postMessage(JSON.stringify({ kind: 'diag', line: String(m).slice(0, 400) })); } catch (e) {} };
+          const send = m => {
+            if (typingSecret()) return;
+            let q = window.__loungeQ;
+            if (!q) { q = []; Object.defineProperty(window, '__loungeQ', { value: q, enumerable: false }); }
+            if (q.length < 500) q.push(JSON.stringify({ kind: 'diag', line: String(m).slice(0, 400) }));
+          };
           const access = navigator.requestMediaKeySystemAccess && navigator.requestMediaKeySystemAccess.bind(navigator);
           if (access) navigator.requestMediaKeySystemAccess = async (ks, cfgs) => {
             const want = (cfgs || []).flatMap(c => (c.videoCapabilities || []).map(v => (v.robustness || '-') + ' ' + (v.contentType || ''))).slice(0, 6).join('; ');

@@ -231,7 +231,8 @@ public sealed class SettingsPanel : Grid, IInputLayer
                 break;
             case SettingKind.Choice:
                 var current = L.Settings.String(d.Key);
-                L.Window.Menu(d.Label, d.Choices.Select(c => new MenuEntry(c.Label, d.Key == K.Theme ? "sun" : "check",
+                // Only the selected choice is ticked (on the right); a tick on every row read as all selected.
+                L.Window.Menu(d.Label, d.Choices.Select(c => new MenuEntry(c.Label, "",
                     () => L.Settings.Set(d.Key, c.Value), Checked: c.Value == current)).ToList());
                 break;
             case SettingKind.Integer or SettingKind.Number:

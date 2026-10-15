@@ -29,8 +29,25 @@ public sealed class WebPad
     /// and a report to Lounge whenever a text field takes focus.</summary>
     public const string PageScript = """
         (() => {
+          // WebView2 always defines window.chrome.webview, which marks the page as being
+          // inside an app; Prime Video probes it and disables Play. Remove it before any
+          // site script runs (Lounge doesn't use it: see WebScreen.Drain).
+          try {
+            if (window.chrome && 'webview' in window.chrome) {
+              const d = Object.getOwnPropertyDescriptor(window.chrome, 'webview');
+              if (!d || d.configurable) delete window.chrome.webview;
+              else Object.defineProperty(window.chrome, 'webview', { get: () => undefined });
+            }
+          } catch (e) {}
           if (window.__lounge) return;
-          const L = window.__lounge = {};
+          const L = {};
+          // Hidden from enumeration; messages for Lounge wait in a queue it reads (no app bridge in the page).
+          Object.defineProperty(window, '__lounge', { value: L, enumerable: false });
+          const post = o => {
+            let q = window.__loungeQ;
+            if (!q) { q = []; Object.defineProperty(window, '__loungeQ', { value: q, enumerable: false }); }
+            if (q.length < 500) q.push(JSON.stringify(o));
+          };
           let ptr, hint, timer, show = false;
           const ensure = () => {
             const host = document.body || document.documentElement;
@@ -64,12 +81,12 @@ public sealed class WebPad
             (el.tagName === 'INPUT' && !/^(button|submit|checkbox|radio|range|color|file|image|reset|hidden)$/i.test(el.type)));
           document.addEventListener('focusin', e => {
             const el = e.target;
-            if (!editable(el) || !window.chrome || !window.chrome.webview) return;
+            if (!editable(el)) return;
             const label = el.getAttribute('aria-label') || el.placeholder || el.name || '';
             const search = el.type === 'search' || /search|query|^q$/i.test((el.name || '') + ' ' + (el.id || '') + ' ' + label) || !!el.closest('form[role=search]');
             // A password field's contents never leave the page.
             const password = el.type === 'password';
-            window.chrome.webview.postMessage(JSON.stringify({ kind: 'text', label, value: password ? '' : (el.value || ''), search, password }));
+            post({ kind: 'text', label, value: password ? '' : (el.value || ''), search, password });
           }, true);
         })();
         """;
