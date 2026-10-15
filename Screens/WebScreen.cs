@@ -52,7 +52,11 @@ public sealed class WebViewHost : NativeControlHost
             s.IsStatusBarEnabled = false;
             s.AreDevToolsEnabled = false;
             s.IsZoomControlEnabled = false;
+            // Nothing typed into a site is kept by Lounge's browser: no saved passwords, no form history.
+            s.IsPasswordAutosaveEnabled = false;
+            s.IsGeneralAutofillEnabled = false;
             if (!string.IsNullOrEmpty(_tile.UserAgent)) s.UserAgent = _tile.UserAgent;
+            else if (L.Settings.String(K.WebIdentity) == "chrome") s.UserAgent = Lounge.Core.Web.WebText.ChromeUserAgent(s.UserAgent);
             if (SelfCheck.Active && Environment.GetEnvironmentVariable("LOUNGE_WEB_UA") is { Length: > 0 } ua) s.UserAgent = ua;
             Controller.ZoomFactor = L.Settings.Double(K.WebZoom);
             Resize();
@@ -184,7 +188,7 @@ public sealed class WebScreen : Screen
                 };
             }
             _pad = pad;
-            if (L.Settings.Bool(K.WebPresentAsBrowser)) await PresentAsBrowser(c.CoreWebView2);
+            if (L.Settings.String(K.WebIdentity) is "edge" or "chrome") await PresentAs(c.CoreWebView2, L.Settings.String(K.WebIdentity));
             if (L.Settings.Bool(K.WebDiagnostics)) _diag = await WebDiagnostics.Start(c.CoreWebView2, _tile.Name);
             c.CoreWebView2.NavigationCompleted += (_, a) => Dispatcher.UIThread.Post(async () =>
             {
@@ -402,7 +406,7 @@ public sealed class WebScreen : Screen
                 _ = pad.TogglePointer();
                 return true;
             case Act.Tertiary:
-                Type("", "", search: false);
+                _ = TypeIntoFocused(web);
                 return true;
             case Act.PrevSection:
                 if (web.CanGoBack) web.GoBack();
@@ -424,26 +428,30 @@ public sealed class WebScreen : Screen
         else Leave();
     }
 
-    /// <summary>"Present as a regular browser": WebView2 announces itself as "Microsoft Edge
-    /// WebView2" in its brand list, which some streaming sites refuse. Pages are shown the
-    /// list without that entry (navigator.userAgentData) and requests carry it without it
-    /// (the Sec-CH-UA headers). The engine and its copy protection are unchanged.</summary>
-    private static async Task PresentAsBrowser(CoreWebView2 web)
+    /// <summary>"Identify to sites as" Edge or Chrome: WebView2 announces itself as "Microsoft
+    /// Edge WebView2" in its brand list, which some streaming sites refuse, and sites pick
+    /// their video protection by browser (PlayReady for Edge, Widevine for Chrome). Pages
+    /// see the chosen brand list (navigator.userAgentData) and requests carry it (Sec-CH-UA).
+    /// The engine and its copy protection are unchanged.</summary>
+    private static async Task PresentAs(CoreWebView2 web, string identity)
     {
-        await web.AddScriptToExecuteOnDocumentCreatedAsync("""
+        var chrome = identity == "chrome" ? "true" : "false";
+        await web.AddScriptToExecuteOnDocumentCreatedAsync($$"""
             (() => {
               const d = navigator.userAgentData;
               if (!d) return;
-              const strip = list => (list || []).filter(b => !/webview/i.test(b.brand));
+              const chrome = {{chrome}};
+              const fix = list => (list || []).filter(b => !/webview/i.test(b.brand))
+                .map(b => chrome && b.brand === 'Microsoft Edge' ? Object.assign({}, b, { brand: 'Google Chrome' }) : b);
               const proto = Object.getPrototypeOf(d);
-              const brands = strip(d.brands);
+              const brands = fix(d.brands);
               Object.defineProperty(proto, 'brands', { get: () => brands, configurable: true });
               const high = proto.getHighEntropyValues;
               proto.getHighEntropyValues = function (hints) {
-                return high.call(this, hints).then(v => { if (v.brands) v.brands = strip(v.brands); if (v.fullVersionList) v.fullVersionList = strip(v.fullVersionList); return v; });
+                return high.call(this, hints).then(v => { if (v.brands) v.brands = fix(v.brands); if (v.fullVersionList) v.fullVersionList = fix(v.fullVersionList); return v; });
               };
               const json = proto.toJSON;
-              if (json) proto.toJSON = function () { const o = json.call(this); o.brands = strip(o.brands); return o; };
+              if (json) proto.toJSON = function () { const o = json.call(this); o.brands = fix(o.brands); return o; };
             })();
             """);
         web.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
@@ -451,10 +459,9 @@ public sealed class WebScreen : Screen
         {
             var headers = a.Request.Headers;
             foreach (var name in new[] { "sec-ch-ua", "sec-ch-ua-full-version-list" })
-                if (headers.Contains(name)) headers.SetHeader(name, Lounge.Core.Web.WebText.StripWebViewBrand(headers.GetHeader(name)));
+                if (headers.Contains(name)) headers.SetHeader(name, Lounge.Core.Web.WebText.RewriteBrands(headers.GetHeader(name), identity));
         };
     }
-
     private void Leave()
     {
         if (L.Window.Find<WebScreen>() == this) L.Window.Remove(this);
@@ -474,6 +481,27 @@ public sealed class WebScreen : Screen
             Type(r.GetProperty("label").GetString() ?? "", password ? "" : r.GetProperty("value").GetString() ?? "", r.GetProperty("search").GetBoolean(), password);
         }
         catch (Exception e) when (e is System.Text.Json.JsonException or KeyNotFoundException or InvalidOperationException) { }
+    }
+
+    /// <summary>Y: the keyboard for the field that has focus, asking the page first so a
+    /// password field gets the masked keyboard.</summary>
+    private async Task TypeIntoFocused(CoreWebView2 web)
+    {
+        string label = "", value = "";
+        var password = false;
+        try
+        {
+            var json = System.Text.Json.JsonSerializer.Deserialize<string>(await web.ExecuteScriptAsync("window.__lounge ? window.__lounge.focused() : ''"));
+            if (!string.IsNullOrEmpty(json))
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(json);
+                label = doc.RootElement.GetProperty("label").GetString() ?? "";
+                password = doc.RootElement.GetProperty("password").GetBoolean();
+                value = password ? "" : doc.RootElement.GetProperty("value").GetString() ?? "";
+            }
+        }
+        catch (Exception e) when (e is System.Text.Json.JsonException or InvalidOperationException or KeyNotFoundException or ArgumentException) { }
+        Type(label, value, search: false, password);
     }
 
     /// <summary>The controller keyboard for whatever text field has focus in the page. The
@@ -512,7 +540,7 @@ public sealed class WebScreen : Screen
         [
             new MenuEntry("Back to Lounge", "home", Leave),
             new MenuEntry("Pointer", "mouse", () => { if (pad is not null) _ = pad.TogglePointer(); }, pad?.PointerMode == true ? "On" : "Off"),
-            new MenuEntry("Keyboard", "keyboard", () => Type("", "", search: false)),
+            new MenuEntry("Keyboard", "keyboard", () => { if (c is not null) _ = TypeIntoFocused(c.CoreWebView2); }),
             new MenuEntry("Show controls", "info", () => { if (pad is not null) DispatcherTimer.RunOnce(() => _ = pad.Hint(pad.HelpText, 9000), TimeSpan.FromMilliseconds(300)); }),
             new MenuEntry("Go back a page", "back", () => { if (c?.CoreWebView2.CanGoBack == true) c.CoreWebView2.GoBack(); }),
             new MenuEntry("Reload", "refresh", () => c?.CoreWebView2.Reload()),

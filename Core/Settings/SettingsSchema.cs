@@ -105,7 +105,7 @@ public static class K
     public const string DrmHint = "web.drmHint";
     public const string ExternalBrowser = "web.externalBrowser";
     public const string WebDiagnostics = "web.diagnostics";
-    public const string WebPresentAsBrowser = "web.presentAsBrowser";
+    public const string WebIdentity = "web.identity";
 
     // Launcher
     public const string ReturnHoldMs = "launcher.returnHoldMs";
@@ -305,8 +305,9 @@ public static class SettingsSchema
             Int(K.CursorSpeed, "Web", "Pointer speed", 8, 1, 20, 1),
             Toggle(K.DrmHint, "Web", "Suggest the full browser when video is blocked", true),
             Choice(K.ExternalBrowser, "Web", "Full browser", "edge", C("edge", "Microsoft Edge", "chrome", "Google Chrome", "default", "System default")),
-            Toggle(K.WebPresentAsBrowser, "Web", "Present as a regular browser", false,
-                "Sites see Microsoft Edge instead of an app's built-in browser. Some streaming sites refuse built-in browsers. Applies to pages opened after the change."),
+            Choice(K.WebIdentity, "Web", "Identify to sites as", "builtin",
+                C("builtin", "Lounge's built-in browser", "edge", "Microsoft Edge", "chrome", "Google Chrome"),
+                "Some streaming sites refuse built-in browsers, and pick their video protection by browser: as Edge they use PlayReady, as Chrome they use Widevine. The engine and its protection are the same. Applies to pages opened after the change."),
             Toggle(K.WebDiagnostics, "Web", "Record playback diagnostics", false,
                 "Writes what a site's video player reports (errors, protection and licence results, blocked requests) to Lounge's logs folder. Never records passwords, form contents, cookies or full addresses."),
 

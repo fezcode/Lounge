@@ -18,6 +18,22 @@ public class WebTextTests
         Assert.Contains("[id]", safe);
     }
 
+    [Theory]
+    [InlineData("Console error: invalid password for user")]
+    [InlineData("Page says: Enter your one-time code")]
+    [InlineData("Console warning: credential store unavailable")]
+    [InlineData("Page says: Enter your PIN")]
+    [InlineData("passwd field changed")]
+    public void Lines_about_passwords_and_codes_are_dropped_whole(string line) =>
+        Assert.True(WebText.MentionsSecret(line));
+
+    [Theory]
+    [InlineData("DRM access granted: com.widevine.alpha")]
+    [InlineData("Page says: Your browser isn't supported")]
+    [InlineData("Request GET https://www.primevideo.com/detail -> 403")]
+    public void Ordinary_diagnostic_lines_are_kept(string line) =>
+        Assert.False(WebText.MentionsSecret(line));
+
     [Fact]
     public void Ordinary_paths_stay_readable()
     {
@@ -31,6 +47,16 @@ public class WebTextTests
     {
         var header = "\"Microsoft Edge WebView2\";v=\"155\", \"Not(A:Brand\";v=\"24\", \"Microsoft Edge\";v=\"155\", \"Chromium\";v=\"155\"";
         Assert.Equal("\"Not(A:Brand\";v=\"24\", \"Microsoft Edge\";v=\"155\", \"Chromium\";v=\"155\"", WebText.StripWebViewBrand(header));
+    }
+
+    [Fact]
+    public void As_Chrome_the_brand_list_and_user_agent_name_Chrome()
+    {
+        var header = "\"Microsoft Edge WebView2\";v=\"155\", \"Not(A:Brand\";v=\"24\", \"Microsoft Edge\";v=\"155\", \"Chromium\";v=\"155\"";
+        Assert.Equal("\"Not(A:Brand\";v=\"24\", \"Google Chrome\";v=\"155\", \"Chromium\";v=\"155\"", WebText.RewriteBrands(header, "chrome"));
+        Assert.Equal(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36",
+            WebText.ChromeUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0"));
     }
 
     [Fact]

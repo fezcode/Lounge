@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
@@ -22,13 +22,15 @@ public abstract class BrowseScreen : Screen
     protected readonly Dictionary<FocusItem, Action> Options = new();
     protected readonly Dictionary<FocusItem, string?> Art = new();
 
-    protected BrowseScreen(string title)
+    /// <param name="accept">What A does here: "Play" for media, "Open" for apps and sites.</param>
+    protected BrowseScreen(string title, string accept = "Play")
     {
         Heading = Ui.Header(title, T.Title);
         var grid = Ui.Grid("*", "Auto,*,Auto");
         grid.Children.Add(Ui.V(6, Heading, Sub).Margin(96, 60, 96, 20).Row(0));
         grid.Children.Add(Body.Row(1));
-        grid.Children.Add(Hints.Bar(Context, (Act.Accept, "Play"), (Act.ContextMenu, "Options"), (Act.Tertiary, "Search"), (Act.Back, "Back")).Margin(96, 10, 0, 40).Row(2));
+        // X opens a focused item's options, as on Home; View does the same.
+        grid.Children.Add(Hints.Bar(Context, (Act.Accept, accept), (Act.Secondary, "Options"), (Act.Tertiary, "Search"), (Act.Back, "Back")).Margin(96, 10, 0, 40).Row(2));
         Children.Add(grid);
     }
 
@@ -52,7 +54,7 @@ public abstract class BrowseScreen : Screen
     {
         if (e.Phase == ActionPhase.Pressed)
         {
-            if (e.Action == Act.ContextMenu && Focused is { } f && Options.TryGetValue(f, out var o)) { o(); return true; }
+            if (e.Action is Act.ContextMenu or Act.Secondary && Focused is { } f && Options.TryGetValue(f, out var o)) { o(); return true; }
             if (e.Action == Act.Tertiary) { L.Window.Push(new SearchScreen()); return true; }
         }
         return base.Handle(e);

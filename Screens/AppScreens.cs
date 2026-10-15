@@ -18,7 +18,7 @@ public sealed class AppsScreen : BrowseScreen
     private readonly bool _web;
     private readonly bool _hidden;
 
-    public AppsScreen(bool web = false, bool showHidden = false) : base(showHidden ? "Hidden tiles" : web ? "Web" : "Apps & Games")
+    public AppsScreen(bool web = false, bool showHidden = false) : base(showHidden ? "Hidden tiles" : web ? "Web" : "Apps & Games", "Open")
     {
         _web = web;
         _hidden = showHidden;
@@ -40,7 +40,7 @@ public sealed class AppsScreen : BrowseScreen
         var entries = _hidden
             ? L.Tiles.HiddenTiles.Select(HomeModel.TileEntry).ToList()
             : HomeModel.Apps(_web);
-        Sub.Text = _hidden ? "Ⓐ shows a tile on Home again" : _web ? "Streaming sites open inside Lounge; Ⓧ for options" : "Ⓐ opens · hold View + Menu in any app to come back";
+        Sub.Text = _hidden ? "Ⓐ shows a tile on Home again" : _web ? "Streaming sites, played with the controller. Ⓧ shows a site's options." : "Ⓐ opens · hold View + Menu in any app to come back";
         double w = _web ? 380 : 250, h = _web ? 214 : 250;
         var (view, focus) = Grid(Columns(w), w, h + 60);
         var wrap = (WrapPanel)view.Content!;

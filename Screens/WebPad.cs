@@ -52,6 +52,13 @@ public sealed class WebPad
           L.press = down => { if (ensure()) ptr.style.transform = down ? 'scale(.72)' : ''; };
           L.hint = (text, ms) => { if (!ensure()) return; hint.textContent = text; hint.style.opacity = 1; clearTimeout(timer); timer = setTimeout(() => hint.style.opacity = 0, ms || 5000); };
           L.size = () => innerWidth + ',' + innerHeight;
+          // What kind of field has focus, for the controller keyboard (never a password's contents).
+          L.focused = () => {
+            const el = document.activeElement;
+            if (!el || !(el.isContentEditable || el.tagName === 'TEXTAREA' || el.tagName === 'INPUT')) return '';
+            const password = el.type === 'password';
+            return JSON.stringify({ label: el.getAttribute('aria-label') || el.placeholder || el.name || '', value: password ? '' : (el.value || ''), password });
+          };
           addEventListener('mousemove', e => { if (show && ensure()) { ptr.style.left = e.clientX + 'px'; ptr.style.top = e.clientY + 'px'; } }, true);
           const editable = el => el && (el.isContentEditable || el.tagName === 'TEXTAREA' ||
             (el.tagName === 'INPUT' && !/^(button|submit|checkbox|radio|range|color|file|image|reset|hidden)$/i.test(el.type)));

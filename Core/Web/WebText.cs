@@ -19,10 +19,24 @@ public static partial class WebText
         return LongToken().Replace(s, "[id]");
     }
 
+    /// <summary>A diagnostic line that talks about a password, passcode, one-time code,
+    /// credential or secret is dropped whole rather than masked.</summary>
+    public static bool MentionsSecret(string s) => Secret().IsMatch(s);
+
     /// <summary>Removes the WebView2 entry from a Sec-CH-UA brand list:
     /// "Microsoft Edge WebView2";v="155", "Chromium";v="155" becomes "Chromium";v="155".</summary>
-    public static string StripWebViewBrand(string header) =>
-        string.Join(", ", header.Split(',').Select(p => p.Trim()).Where(p => p.Length > 0 && !p.Contains("WebView", StringComparison.OrdinalIgnoreCase)));
+    public static string StripWebViewBrand(string header) => RewriteBrands(header, "edge");
+
+    /// <summary>A Sec-CH-UA brand list as the chosen browser would send it: "edge" drops the
+    /// WebView2 entry; "chrome" also names the browser Google Chrome instead of Microsoft Edge.</summary>
+    public static string RewriteBrands(string header, string identity) =>
+        string.Join(", ", header.Split(',')
+            .Select(p => p.Trim())
+            .Where(p => p.Length > 0 && !p.Contains("WebView", StringComparison.OrdinalIgnoreCase))
+            .Select(p => identity == "chrome" ? p.Replace("\"Microsoft Edge\"", "\"Google Chrome\"") : p));
+
+    /// <summary>The user-agent string as Chrome sends it: Edge's is Chrome's plus an "Edg/" token.</summary>
+    public static string ChromeUserAgent(string edgeUserAgent) => EdgeToken().Replace(edgeUserAgent, "");
 
     /// <summary>The largest edge in an icon "sizes" attribute ("16x16 192x192"), 0 when unknown.</summary>
     public static int LargestIconSize(string? sizes)
@@ -65,6 +79,12 @@ public static partial class WebText
 
     [GeneratedRegex(@"(?<![A-Za-z0-9_\-])[A-Za-z0-9_\-]{24,}")]
     private static partial Regex LongToken();
+
+    [GeneratedRegex(@"pass(word|wd|code|phrase)|\bpwd\b|\botp\b|one[- ]time|credential|secret|\bpin\b", RegexOptions.IgnoreCase)]
+    private static partial Regex Secret();
+
+    [GeneratedRegex(@" Edg[A-Z]?/[\d.]+")]
+    private static partial Regex EdgeToken();
 
     [GeneratedRegex("(\\d+)x\\d+", RegexOptions.IgnoreCase)]
     private static partial Regex SizeToken();

@@ -78,6 +78,7 @@ Check("Screening Room's home animates without errors as focus moves", ScreeningH
             Check("When a launched app quits by itself, Lounge listens again", DormantRealProcess);
             Check("A video plays, the D-pad skips and the trigger scrubs", PlayAndSeek);
 Check("In Now Playing, A presses the focused button and song", NowPlayingButtons);
+Check("On the Web screen, X opens a site's options", WebOptionsWithX);
         }
         catch (Exception e)
         {
@@ -497,6 +498,19 @@ Check("In Now Playing, A presses the focused button and song", NowPlayingButtons
         Press(PadButton.B);                        // stop
         Pump(10);
         Assert(_w.Top is not PlayerScreen, "B did not leave the player");
+    }
+
+    private static void WebOptionsWithX()
+    {
+        _w.Push(new AppsScreen(web: true));
+        Pump(10);
+        Press(PadButton.X);
+        Pump(10);
+        Assert(_w.Overlays.OfType<ModalLayer>().Any(), "X did not open the focused site's options");
+        Press(PadButton.B);
+        Pump(10);
+        _w.GoHome();
+        Pump(10);
     }
 
     private static void NowPlayingButtons()

@@ -27,7 +27,9 @@ public sealed partial class WebDiagnostics
         (() => {
           if (window.__loungeDiag) return;
           window.__loungeDiag = true;
-          const send = m => { try { window.chrome.webview.postMessage(JSON.stringify({ kind: 'diag', line: String(m).slice(0, 400) })); } catch (e) {} };
+          // Nothing is reported while a password field has focus.
+          const typingSecret = () => { const a = document.activeElement; return !!a && a.tagName === 'INPUT' && a.type === 'password'; };
+          const send = m => { if (typingSecret()) return; try { window.chrome.webview.postMessage(JSON.stringify({ kind: 'diag', line: String(m).slice(0, 400) })); } catch (e) {} };
           const access = navigator.requestMediaKeySystemAccess && navigator.requestMediaKeySystemAccess.bind(navigator);
           if (access) navigator.requestMediaKeySystemAccess = async (ks, cfgs) => {
             const want = (cfgs || []).flatMap(c => (c.videoCapabilities || []).map(v => (v.robustness || '-') + ' ' + (v.contentType || ''))).slice(0, 6).join('; ');
@@ -46,6 +48,13 @@ public sealed partial class WebDiagnostics
               s.update = r => up(r).then(x => { send('DRM licence accepted'); return x; }, e => { send('DRM licence REJECTED: ' + e.name + ': ' + e.message); throw e; });
               return s;
             };
+            // Sites check the display link's protection (HDCP) before enabling play.
+            const policy = MediaKeys.prototype.getStatusForPolicy;
+            if (policy) MediaKeys.prototype.getStatusForPolicy = function (p) {
+              const want = p && p.minHdcpVersion ? 'HDCP ' + p.minHdcpVersion : JSON.stringify(p);
+              return policy.call(this, p).then(s => { send('Display protection check (' + want + '): ' + s); return s; },
+                                               e => { send('Display protection check (' + want + ') FAILED: ' + e.name + ': ' + e.message); throw e; });
+            };
             const setKeys = HTMLMediaElement.prototype.setMediaKeys;
             HTMLMediaElement.prototype.setMediaKeys = function (k) {
               return setKeys.call(this, k).then(r => { send('DRM attached to the video'); return r; }, e => { send('DRM attach FAILED: ' + e.name + ': ' + e.message); throw e; });
@@ -57,8 +66,10 @@ public sealed partial class WebDiagnostics
           console.error = function () { send('Console error: ' + Array.from(arguments).map(String).join(' ')); return err.apply(console, arguments); };
           const warn = console.warn;
           console.warn = function () { send('Console warning: ' + Array.from(arguments).map(String).join(' ')); return warn.apply(console, arguments); };
-          addEventListener('error', e => send('Page error: ' + e.message));
-          addEventListener('unhandledrejection', e => send('Unhandled rejection: ' + (e.reason && (e.reason.message || e.reason))));
+          // Where an error came from: the first frames of its stack (script names and lines).
+          const where = err => err && err.stack ? ' at ' + String(err.stack).split('\n').slice(1, 4).map(s => s.trim()).join(' < ') : '';
+          addEventListener('error', e => send('Page error: ' + e.message + where(e.error)));
+          addEventListener('unhandledrejection', e => send('Unhandled rejection: ' + (e.reason && (e.reason.message || e.reason)) + where(e.reason)));
           // What the page tells the viewer about support, and play controls it disabled.
           const seen = new Set();
           setInterval(() => {
@@ -115,6 +126,7 @@ public sealed partial class WebDiagnostics
 
     public void Write(string line)
     {
+        if (WebText.MentionsSecret(line)) return;   // never a line about passwords, codes or credentials
         lock (_gate)
         {
             if (_lines++ > 5000) return;   // a runaway page can't fill the disk
