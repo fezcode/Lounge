@@ -317,6 +317,7 @@ public sealed class WebScreen : Screen
         {
             _failedRequests.Add(DateTime.Now.ToString("ss.f ") + "---- " + step);
             if (step.StartsWith("wait:")) await Task.Delay(int.Parse(step[5..]));
+            else if (step.StartsWith("volume:")) { await pad.Volume(int.Parse(step[7..]), false); await Task.Delay(300); }
             else if (step.StartsWith("hash:")) { await c.CoreWebView2.ExecuteScriptAsync($"location.hash = {System.Text.Json.JsonSerializer.Serialize(step[5..])}"); await Task.Delay(700); }
             else if (step.StartsWith("hold:")) { var parts = step.Split(':'); await pad.Key(parts[2], int.Parse(parts[1])); await Task.Delay(700); }
             else if (step == "jsclick") { await c.CoreWebView2.ExecuteScriptAsync("(document.querySelector('.zylon-focus') || document.activeElement).click()"); await Task.Delay(700); }
@@ -340,7 +341,7 @@ public sealed class WebScreen : Screen
             "(() => { const v = document.querySelector('video'); if (!v) return 'no video element'; " +
             "return `paused=${v.paused} time=${v.currentTime.toFixed(1)} ready=${v.readyState} err=${v.error ? v.error.code + ':' + v.error.message : 'none'} src=${(v.currentSrc || '').slice(0, 40)}`; })()"));
         var text = Eval(await c.CoreWebView2.ExecuteScriptAsync("(document.body ? document.body.innerText : '').replace(/\\s+/g, ' ').slice(0, 2000)"));
-        await pad.Hint(pad.HelpText, 9000);
+        if (!(Environment.GetEnvironmentVariable("LOUNGE_WEB_KEYS") ?? "").Contains("volume:")) await pad.Hint(pad.HelpText, 9000);
         await Task.Delay(500);
         using (var png = File.Create(Lounge.Shell.SelfCheck.PathFor("web.png")))
             await c.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, png);
@@ -577,6 +578,9 @@ public sealed class WebScreen : Screen
             new MenuEntry("Open in full browser", "external", () => { Leave(); Launcher.Launch(_tile.Clone().Also(t => t.OpenExternally = true)); }),
         ]);
     }
+
+    /// <summary>The volume display, drawn inside the page so it shows over the site.</summary>
+    public void ShowVolume(int percent, bool muted) { if (_pad is { } pad) _ = pad.Volume(percent, muted); }
 
     public void SetCovered(bool covered)
     {

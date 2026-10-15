@@ -407,12 +407,20 @@ public sealed class MainWindow : Window
             case Act.CursorToggle: ToggleCursor(); break;
             case Act.Mute:
                 L.Volume.Muted = !L.Volume.Muted;
-                _volume.Show(L.Volume.Level, L.Volume.Muted);
+                ShowVolume(L.Volume.Level, L.Volume.Muted);
                 break;
             case Act.Back:
                 if (_overlayStack.Count == 0 && _stack.Count == 1) AskExit();
                 break;
         }
+    }
+
+    /// <summary>Lounge's volume display; over a web page it is drawn inside the page,
+    /// because the page's native window covers anything Lounge paints.</summary>
+    private void ShowVolume(int level, bool muted)
+    {
+        _volume.Show(level, muted);
+        if (Top is WebScreen web && _overlayStack.Count == 0) web.ShowVolume(level, muted);
     }
 
     private void ChangeVolume(int direction)
@@ -421,7 +429,7 @@ public sealed class MainWindow : Window
         var level = L.Volume.Step(direction * step);
         if (level < 0) { Toast("No sound output is available.", "mute"); return; }
         L.Play(UiSound.Move);
-        _volume.Show(level, L.Volume.Muted);
+        ShowVolume(level, L.Volume.Muted);
     }
 
     private void OnKey(object? sender, KeyEventArgs e)

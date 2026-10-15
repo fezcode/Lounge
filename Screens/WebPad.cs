@@ -69,6 +69,27 @@ public sealed class WebPad
           L.press = down => { if (ensure()) ptr.style.transform = down ? 'scale(.72)' : ''; };
           L.hint = (text, ms) => { if (!ensure()) return; hint.textContent = text; hint.style.opacity = 1; clearTimeout(timer); timer = setTimeout(() => hint.style.opacity = 0, ms || 5000); };
           L.size = () => innerWidth + ',' + innerHeight;
+          // Lounge's volume display, drawn in the page (a web view covers what Lounge paints).
+          let vol, volTimer;
+          L.volume = (pct, muted) => {
+            const host = document.body || document.documentElement;
+            if (!host) return;
+            if (!vol) {
+              vol = document.createElement('div');
+              vol.style.cssText = 'position:fixed;top:48px;right:56px;display:flex;align-items:center;gap:16px;padding:16px 24px;border-radius:22px;' +
+                'background:rgba(18,18,22,.88);color:#fff;font:600 22px "Segoe UI Variable","Segoe UI",system-ui,sans-serif;z-index:2147483647;' +
+                'pointer-events:none;opacity:0;transition:opacity .25s;box-shadow:0 10px 40px rgba(0,0,0,.5)';
+              vol.innerHTML = '<span data-i></span><div style="width:220px;height:8px;border-radius:4px;background:rgba(255,255,255,.22);overflow:hidden">' +
+                '<div data-f style="height:100%;border-radius:4px;background:#fff;transition:width .12s"></div></div><span data-n style="min-width:52px;text-align:right"></span>';
+            }
+            if (vol.parentNode !== host) host.appendChild(vol);
+            vol.querySelector('[data-i]').textContent = muted || pct === 0 ? '🔇' : pct < 50 ? '🔉' : '🔊';
+            vol.querySelector('[data-f]').style.width = (muted ? 0 : pct) + '%';
+            vol.querySelector('[data-n]').textContent = muted ? 'Muted' : pct + '%';
+            vol.style.opacity = 1;
+            clearTimeout(volTimer);
+            volTimer = setTimeout(() => vol.style.opacity = 0, 1600);
+          };
           // What kind of field has focus, for the controller keyboard (never a password's contents).
           L.focused = () => {
             const el = document.activeElement;
@@ -120,6 +141,12 @@ public sealed class WebPad
     public string HelpText => PointerMode
         ? "Left stick: pointer  ·  A: click  ·  Right stick: scroll  ·  Y: keyboard  ·  X: arrow keys  ·  B: back  ·  View: options  ·  Hold B: leave"
         : "D-pad: move  ·  A: select  ·  B: back  ·  Y: keyboard  ·  X: pointer  ·  View: options  ·  Hold B: leave";
+
+    public async Task Volume(int percent, bool muted)
+    {
+        try { await _web.ExecuteScriptAsync($"window.__lounge && window.__lounge.volume({Math.Clamp(percent, 0, 100)}, {(muted ? "true" : "false")})"); }
+        catch (Exception) { }
+    }
 
     public async Task Hint(string text, int ms = 5000)
     {
