@@ -1,0 +1,92 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f8fafc;
+  --fg: #0f172a;
+  --muted: #64748b;
+  --accent: #d97706;
+  --accent-hover: #b45309;
+  --accent-fg: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f172a;
+    --fg: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #f59e0b;
+    --accent-hover: #fbbf24;
+    --accent-fg: #1c1300;
+  }
+}
+
+body {
+  margin: 0;
+  padding: 14px 16px 16px;
+  width: 260px;
+  background: var(--bg);
+  color: var(--fg);
+  font: 13px/1.45 system-ui, sans-serif;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.hint {
+  margin: 8px 0 12px;
+  color: var(--muted);
+}
+
+button {
+  width: 100%;
+  padding: 9px 12px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:hover:enabled {
+  background: var(--accent-hover);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+#status {
+  margin: 10px 0 0;
+  min-height: 1.4em;
+  color: var(--muted);
+}
+
+#status.ok {
+  color: #16a34a;
+}
+
+#status.error {
+  color: #dc2626;
+}
+
+@media (prefers-color-scheme: dark) {
+  #status.ok {
+    color: #4ade80;
+  }
+
+  #status.error {
+    color: #f87171;
+  }
+}
