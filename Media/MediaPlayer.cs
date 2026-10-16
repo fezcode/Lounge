@@ -176,6 +176,10 @@ public sealed unsafe class MediaPlayer : IDisposable
         _presentFirst = true;
         _seekTarget = 0;
         _sysBase = 0;
+        // Nothing from the previous file's seeks may carry over: a stale exact target
+        // drops every frame before it, so the next episode stayed black until a scrub.
+        lock (_gate) { _seekRequest = null; _exactTarget = double.NegativeInfinity; _seekPending = false; _audioWaitSince = 0; }
+        _queuedScrub = null;
         if (startAt > 0.5 && (Duration <= 0 || startAt < Duration)) RequestSeek(startAt, exact: true);
 
         _demuxThread = new Thread(DemuxLoop) { IsBackground = true, Name = "demux" };

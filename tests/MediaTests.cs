@@ -158,6 +158,24 @@ public class MediaTests
     }
 
     [Fact]
+    public void Next_file_shows_its_first_frame_after_a_seek_in_the_previous_one()
+    {
+        // Next episode (auto or RS): the old file's exact-seek target must not carry over
+        // and drop every frame before it, which left the picture black until a scrub.
+        if (!Ready(out var why)) { Assert.Fail(why); return; }
+        using var p = new MediaPlayer();
+        Assert.True(p.Open(Clips.Instance.Video, new PlayerOptions { Volume = 0 }), p.LastError);
+        WaitFrame(p)?.Dispose();
+        p.Seek(6.0);
+        WaitFrame(p)?.Dispose();
+        Assert.True(p.Open(Clips.Instance.Video, new PlayerOptions { Volume = 0 }), p.LastError);
+        p.Play();
+        using var f = WaitFrame(p);
+        Assert.NotNull(f);
+        Assert.InRange(f!.Pts, 0, 0.05);
+    }
+
+    [Fact]
     public void Scrub_shows_keyframes_then_settles_exactly()
     {
         if (!Ready(out var why)) { Assert.Fail(why); return; }
