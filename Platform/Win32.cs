@@ -50,6 +50,9 @@ public static class Win32
 
     public static void Minimize(IntPtr hwnd) => ShowWindow(hwnd, SW_MINIMIZE);
 
+    /// <summary>A minimized window can still be the foreground window; it is not in front then.</summary>
+    public static bool IsMinimized(IntPtr hwnd) => hwnd != IntPtr.Zero && IsIconic(hwnd);
+
     /// <summary>Asks a process's windows to close (WM_CLOSE), then gives up quietly.</summary>
     public static void CloseProcess(int pid)
     {

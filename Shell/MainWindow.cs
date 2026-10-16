@@ -117,7 +117,7 @@ public sealed class MainWindow : Window
             // On top but not focused (a click went to another window): the controller wakes it.
             if (L.Dormant.Mode == ShellMode.Background && KeepsOnTop) ComeBack();
         };
-        L.Dormant.ModeChanged += _ => { UpdateContext(); UpdateAmbient(); };
+        L.Dormant.ModeChanged += m => { Log.Write($"shell mode: {m}"); UpdateContext(); UpdateAmbient(); };
         L.Dormant.LaunchedAppExited += () => { ComeBack(); Toast("Welcome back", "home"); };
         // A website's icon arrived: show it on its tile.
         SiteIcons.Updated += () => Dispatcher.UIThread.Post(() => { if (Top is HomeScreen h) h.Rebuild(); });
@@ -538,16 +538,21 @@ public sealed class MainWindow : Window
 
     private void Watch()
     {
-        var inFront = _hwnd != IntPtr.Zero && Win32.ForegroundWindow() == _hwnd;
+        // Minimized but still the foreground window counts as away: otherwise Lounge keeps
+        // listening while invisible and nothing (not even the return chord) brings it back.
+        var minimized = Win32.IsMinimized(_hwnd);
+        var inFront = _hwnd != IntPtr.Zero && !minimized && Win32.ForegroundWindow() == _hwnd;
         var pid = L.Dormant.LaunchedPid;
         var alive = pid is { } p && Win32.IsProcessAlive(p);
         L.Dormant.Observe(inFront, alive);
         // While Lounge is in charge it stays on top and full screen (Windows can knock a
         // full-screen window back to normal when another app takes the front). Once an app
-        // is launched from Lounge, Lounge steps aside so that app can be in front.
+        // is launched from Lounge, Lounge steps aside so that app can be in front. A
+        // minimized window is left alone here: going full screen would activate it without
+        // restoring it. The controller or the return chord brings it back (ComeBack).
         var onTop = KeepsOnTop;
         if (Topmost != onTop) Topmost = onTop;
-        if ((onTop || inFront) && !_windowed && L.Dormant.Mode != ShellMode.Dormant && WindowState != WindowState.FullScreen)
+        if ((onTop || inFront) && !minimized && !_windowed && L.Dormant.Mode != ShellMode.Dormant && WindowState != WindowState.FullScreen)
             WindowState = WindowState.FullScreen;
 
         var idleMinutes = L.Settings.Int(K.IdleDimMinutes);
@@ -595,9 +600,11 @@ public sealed class MainWindow : Window
 
     private void ComeBack()
     {
+        // Restore natively first: asking Avalonia for full screen while minimized leaves
+        // the window minimized.
+        Win32.BringToFront(_hwnd);
         if (!_windowed) WindowState = WindowState.FullScreen;
         else if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
-        Win32.BringToFront(_hwnd);
         Activate();
         UpdateAmbient();
     }
