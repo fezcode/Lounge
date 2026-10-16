@@ -150,6 +150,7 @@ public sealed class TileEditorScreen : BrowseScreen
     {
         _tile = tile.Clone();
         _isNew = isNew;
+        _brand = Colours.Any(c => c.Hex == tile.Color) ? null : tile.Color;
         Sub.Text = "Changes are saved when you choose Save";
         Build();
     }
@@ -186,7 +187,11 @@ public sealed class TileEditorScreen : BrowseScreen
                 var u = await L.Window.KeyboardAsync(new KeyboardRequest(_tile.IsWeb ? "Web address" : "Link", _tile.Target, SelectAll: false,
                     Suggestions: ["https://", "https://www.", ".com", ".tv"],
                     Validate: s => _tile.IsWeb && !Uri.TryCreate(s, UriKind.Absolute, out _) ? "That isn't a full web address (https://...)." : null));
-                if (u is not null) { _tile.Target = u.Trim(); Refresh(); }
+                if (u is null) return;
+                _tile.Target = u.Trim();
+                // A known streaming site gets its logo, whether the tile is new or edited.
+                if (_tile.IsWeb && _tile.Icon.Length == 0) _tile.Logo = TileStore.LogoFor(_tile.Target) ?? "";
+                Refresh();
             });
         if (_tile.Kind == TileKind.App)
         {
@@ -198,19 +203,38 @@ public sealed class TileEditorScreen : BrowseScreen
                 if (a is not null) { _tile.Args = a; Refresh(); }
             });
         }
-        Row("icon", "Picture", () => string.IsNullOrEmpty(_tile.Icon) ? "Automatic" : Path.GetFileName(_tile.Icon), () =>
-            L.Window.Menu("Picture",
-            [
-                new MenuEntry("Choose an image in Files", "image", () => L.Window.Push(new FilesScreen(null, new FilePick(FilePickKind.Image, "Choose a picture", p => { _tile.Icon = p; Refresh(); })))),
-                new MenuEntry("Automatic", "refresh", () => { _tile.Icon = ""; Refresh(); }),
-            ]));
-        Row("color", "Colour", () => Colours.FirstOrDefault(c => c.Hex == _tile.Color).Name ?? _tile.Color, () =>
-            L.Window.Menu("Colour", Colours.Select(c => new MenuEntry(c.Name, "sun", () => { _tile.Color = c.Hex; Refresh(); }, Checked: c.Hex == _tile.Color)).ToList()));
+        Row("icon", "Picture", PictureName, () =>
+        {
+            var automatic = _tile.IsWeb ? "Site icon" : "Automatic";
+            var items = new List<MenuEntry>
+            {
+                new("Choose an image in Files", "image", () => L.Window.Push(new FilesScreen(null, new FilePick(FilePickKind.Image, "Choose a picture", p => { _tile.Icon = p; Refresh(); })))),
+            };
+            if (_tile.IsWeb && TileStore.LogoFor(_tile.Target) is { } logo)
+                items.Add(new MenuEntry("Logo", "star", () => { _tile.Icon = ""; _tile.Logo = logo; Refresh(); }, Checked: PictureName() == "Logo"));
+            items.Add(new MenuEntry(automatic, "refresh", () => { _tile.Icon = ""; _tile.Logo = ""; Refresh(); }, Checked: PictureName() == automatic));
+            L.Window.Menu("Picture", items);
+        });
+        Row("color", "Colour", () => Colours.FirstOrDefault(c => c.Hex == _tile.Color).Name ?? "Brand colour", () =>
+        {
+            var choices = Colours.ToList();
+            if (_brand is not null) choices.Insert(0, (_brand, "Brand colour"));
+            L.Window.Menu("Colour", choices.Select(c => new MenuEntry(c.Name, "sun", () => { _tile.Color = c.Hex; Refresh(); }, Checked: c.Hex == _tile.Color)).ToList());
+        });
         if (_tile.IsWeb)
-            Row("external", "Open in full browser", () => _tile.OpenExternally ? "Yes" : "No, inside Lounge", () => _tile.OpenExternally = !_tile.OpenExternally);
+        {
+            Row("external", "Open in", () => _tile.OpenExternally ? "Full browser" : "Lounge", () => _tile.OpenExternally = !_tile.OpenExternally);
+            Row("agent", "Site version", () => _tile.UserAgent.Length == 0 ? "Standard" : _tile.UserAgent == TileStore.TvUserAgent ? "TV (arrow keys)" : "Custom", () =>
+            {
+                // TV sites are driven with the arrow keys; standard ones with the pointer.
+                var tv = _tile.UserAgent.Length == 0;
+                _tile.UserAgent = tv ? TileStore.TvUserAgent : "";
+                _tile.AllowMouse = !tv;
+            });
+        }
         if (_tile.Kind != TileKind.Cogas)
             Row("mouse", _tile.IsWeb ? "Start with the pointer" : "Start with the controller mouse",
-                () => _tile.AllowMouse ? "Yes" : _tile.IsWeb ? "No, arrow keys (TV sites)" : "No (hold View + B for it)",
+                () => _tile.AllowMouse ? "Yes" : _tile.IsWeb ? "No, arrow keys" : "No (hold View + B for it)",
                 () => _tile.AllowMouse = !_tile.AllowMouse);
         if (!_tile.IsWeb)
         {
@@ -220,7 +244,7 @@ public sealed class TileEditorScreen : BrowseScreen
                 ReturnBehaviour.Switch => "Leave it running", ReturnBehaviour.Close => "Close it", ReturnBehaviour.Ask => "Ask", _ => "Use the default",
             }, () => _tile.OnReturn = (ReturnBehaviour)(((int)_tile.OnReturn + 1) % 4));
         }
-        if (!_isNew) Row("hide", "Show on Home", () => _tile.Hidden ? "Hidden" : "Shown", () => _tile.Hidden = !_tile.Hidden);
+        Row("hide", "Show on Home", () => _tile.Hidden ? "Hidden" : "Shown", () => _tile.Hidden = !_tile.Hidden);
 
         var save = new Card(Ui.H(14, Icons.Make("check", 28, T.OnAccent), Ui.Text("Save", T.Body, T.OnAccent, FontWeight.SemiBold)).Margin(36, 18), 40) { FocusScale = 1.06 };
         save.Body.Background = T.Accent;
@@ -248,6 +272,11 @@ public sealed class TileEditorScreen : BrowseScreen
     }
 
     private readonly Dictionary<string, Action> _refreshers = new();
+    /// <summary>The tile's own colour when it is not one of the palette's (Prime's blue).</summary>
+    private readonly string? _brand;
+
+    private string PictureName() =>
+        _tile.Icon.Length > 0 ? Path.GetFileName(_tile.Icon) : _tile.Logo.Length > 0 ? "Logo" : _tile.IsWeb ? "Site icon" : "Automatic";
 
     private void Refresh()
     {

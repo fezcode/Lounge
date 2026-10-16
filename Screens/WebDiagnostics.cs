@@ -35,12 +35,29 @@ public sealed partial class WebDiagnostics
             if (!q) { q = []; Object.defineProperty(window, '__loungeQ', { value: q, enumerable: false }); }
             if (q.length < 500) q.push(JSON.stringify({ kind: 'diag', line: String(m).slice(0, 400) }));
           };
-          const access = navigator.requestMediaKeySystemAccess && navigator.requestMediaKeySystemAccess.bind(navigator);
-          if (access) navigator.requestMediaKeySystemAccess = async (ks, cfgs) => {
+          // On the prototype, so players that call Navigator.prototype's method directly are seen too.
+          const access = window.Navigator && Navigator.prototype.requestMediaKeySystemAccess;
+          if (access) Navigator.prototype.requestMediaKeySystemAccess = async function (ks, cfgs) {
             const want = (cfgs || []).flatMap(c => (c.videoCapabilities || []).map(v => (v.robustness || '-') + ' ' + (v.contentType || ''))).slice(0, 6).join('; ');
-            try { const a = await access(ks, cfgs); send('DRM access granted: ' + ks + ' [' + want + ']'); return a; }
+            try { const a = await access.call(this, ks, cfgs); send('DRM access granted: ' + ks + ' [' + want + ']'); return a; }
             catch (e) { send('DRM access REFUSED: ' + ks + ' [' + want + '] ' + e.name + ': ' + e.message); throw e; }
           };
+          // Whether media data ever arrives, and what the player asks the browser to decode.
+          if (window.MediaSource) {
+            const addSb = MediaSource.prototype.addSourceBuffer;
+            MediaSource.prototype.addSourceBuffer = function (mime) {
+              try { const sb = addSb.call(this, mime); send('Video stream opened: ' + mime); let first = true;
+                const append = sb.appendBuffer.bind(sb); sb.appendBuffer = d => { if (first) { first = false; send('Media data arriving: ' + mime); } return append(d); };
+                return sb; }
+              catch (e) { send('Video stream REFUSED: ' + mime + ' ' + e.name); throw e; }
+            };
+            const supported = MediaSource.isTypeSupported.bind(MediaSource);
+            MediaSource.isTypeSupported = t => { const r = supported(t); if (!r) send('Format not supported: ' + t); return r; };
+          }
+          const playOnce = new Set();
+          for (const ev of ['loadedmetadata', 'playing', 'waiting']) document.addEventListener(ev, e => { if (e.target instanceof HTMLMediaElement && !playOnce.has(ev)) { playOnce.add(ev); send('Video event: ' + ev); } }, true);
+          const play = HTMLMediaElement.prototype.play;
+          HTMLMediaElement.prototype.play = function () { const p = play.apply(this, arguments); if (p && p.catch) p.catch(e => send('Play refused: ' + e.name + ': ' + e.message)); return p; };
           if (window.MediaKeys) {
             const create = MediaKeys.prototype.createSession;
             MediaKeys.prototype.createSession = function () {
@@ -125,6 +142,8 @@ public sealed partial class WebDiagnostics
             Write("Browser: " + System.Text.Json.JsonSerializer.Deserialize<string>(await web.ExecuteScriptAsync("navigator.userAgent")));
             foreach (var line in (await WebScreen.EvalPromise(web, WebScreen.DrmMatrixProbe, 15000)).Split(" | "))
                 Write("Supports " + line);
+            foreach (var line in (await WebScreen.EvalPromise(web, WebScreen.HdcpProbe, 15000)).Split(" | "))
+                Write("Screen link " + line);
         }
         catch (Exception e) { Write("Could not describe the browser: " + e.Message); }
     }

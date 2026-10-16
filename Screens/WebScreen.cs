@@ -43,9 +43,12 @@ public sealed class WebViewHost : NativeControlHost
         {
             var args = "--autoplay-policy=no-user-gesture-required";
             if (SelfCheck.Active && Environment.GetEnvironmentVariable("LOUNGE_WEB_ARGS") is { Length: > 0 } extra) args += " " + extra;
-            var options = new CoreWebView2EnvironmentOptions(args);
+            var options = new CoreWebView2EnvironmentOptions(args) { AreBrowserExtensionsEnabled = WebExtensions.Enabled };
             var env = await CoreWebView2Environment.CreateAsync(null, AppPaths.WebView, options);
             Controller = await env.CreateCoreWebView2ControllerAsync(_hwnd);
+            // Before the first page, so extensions that work inside pages see it load.
+            try { await WebExtensions.Sync(Controller.CoreWebView2.Profile); }
+            catch (Exception e) when (e is COMException or InvalidOperationException or ArgumentException) { Lounge.Shell.Log.Write("extensions: " + e.Message); }
             Controller.DefaultBackgroundColor = System.Drawing.Color.Black;
             var s = Controller.CoreWebView2.Settings;
             s.AreDefaultContextMenusEnabled = false;
@@ -208,6 +211,7 @@ public sealed class WebScreen : Screen
                 if (!_helped) { _helped = true; await pad.Hint(pad.HelpText, 9000); }
                 if (SelfCheck.Active) _ = ReportSelfCheck(c, a.IsSuccess).ContinueWith(r => { if (r.Exception is { } x) { SelfCheck.Report("web-error", new { error = x.ToString() }); Dispatcher.UIThread.Post(() => L.Window.Exit()); } });
             });
+            c.CoreWebView2.FrameCreated += (_, a) => Track(a.Frame);
             c.CoreWebView2.NewWindowRequested += (_, a) => { a.Handled = true; c.CoreWebView2.Navigate(a.Uri); };
             // A page that closes itself (YouTube TV's "Exit") brings Lounge back.
             c.CoreWebView2.WindowCloseRequested += (_, _) => Dispatcher.UIThread.Post(Leave);
@@ -259,24 +263,98 @@ public sealed class WebScreen : Screen
             })()
             """;
 
+    /// <summary>What each copy-protection system says about the screen link: the check sites
+    /// make (MediaKeys.getStatusForPolicy) before they hand out a licence.</summary>
+    public const string HdcpProbe = """
+            (async () => {
+              const out = [];
+              const cfg = [{ initDataTypes: ['cenc'], videoCapabilities: [{ contentType: 'video/mp4; codecs="avc1.640028"' }] }];
+              for (const ks of ['com.widevine.alpha', 'com.microsoft.playready.recommendation']) {
+                try {
+                  const keys = await (await navigator.requestMediaKeySystemAccess(ks, cfg)).createMediaKeys();
+                  for (const v of ['1.0', '1.4', '2.2']) {
+                    try { out.push(ks + ' HDCP ' + v + ': ' + await keys.getStatusForPolicy({ minHdcpVersion: v })); }
+                    catch (e) { out.push(ks + ' HDCP ' + v + ': ' + e.name); }
+                  }
+                } catch (e) { out.push(ks + ': ' + e.name); }
+              }
+              return out.join(' | ');
+            })()
+            """;
+
     /// <summary>ExecuteScriptAsync returns a Promise as "{}", so the result is parked on
     /// the window and read back until it arrives.</summary>
-    public static async Task<string> EvalPromise(CoreWebView2 web, string promiseExpression, int timeoutMs = 4000)
+    public static Task<string> EvalPromise(CoreWebView2 web, string promiseExpression, int timeoutMs = 4000) =>
+        EvalPromise(web.ExecuteScriptAsync, promiseExpression, timeoutMs);
+
+    /// <summary>The same in any script context: the page or one of its frames.</summary>
+    public static async Task<string> EvalPromise(Func<string, Task<string>> execute, string promiseExpression, int timeoutMs = 4000)
     {
         var slot = "__lounge" + Guid.NewGuid().ToString("N")[..8];
         // The slot is hidden from enumeration and removed once read, so pages can't spot it.
-        await web.ExecuteScriptAsync($"Object.defineProperty(window, '{slot}', {{ value: undefined, writable: true, configurable: true, enumerable: false }}); Promise.resolve({promiseExpression}).then(r => window.{slot} = String(r), e => window.{slot} = 'error:' + e);");
+        await execute($"Object.defineProperty(window, '{slot}', {{ value: undefined, writable: true, configurable: true, enumerable: false }}); Promise.resolve({promiseExpression}).then(r => window.{slot} = String(r), e => window.{slot} = 'error:' + e);");
         try
         {
             for (int waited = 0; waited < timeoutMs; waited += 100)
             {
-                var r = await web.ExecuteScriptAsync($"window.{slot} === undefined ? null : window.{slot}");
+                var r = await execute($"window.{slot} === undefined ? null : window.{slot}");
                 if (r != "null") return System.Text.Json.JsonSerializer.Deserialize<string>(r) ?? "";
                 await Task.Delay(100);
             }
             return "timeout";
         }
-        finally { _ = web.ExecuteScriptAsync($"delete window.{slot}"); }
+        finally { _ = execute($"delete window.{slot}"); }
+    }
+
+    /// <summary>The page's frames, nested ones included, for scripts that must reach a
+    /// consent dialog wherever it lives.</summary>
+    private readonly List<CoreWebView2Frame> _frames = new();
+
+    private void Track(CoreWebView2Frame frame)
+    {
+        _frames.Add(frame);
+        frame.Destroyed += (_, _) => _frames.Remove(frame);
+        frame.FrameCreated += (_, a) => Track(a.Frame);
+    }
+
+    /// <summary>View > Extensions: run AllOff, switch browser extensions on or off.</summary>
+    private async void ExtensionsMenu()
+    {
+        var c = _host.Controller;
+        if (c is null) return;
+        var items = new List<MenuEntry>();
+        if (WebExtensions.HasAllOff)
+            items.Add(new MenuEntry("AllOff: switch off consent toggles", "puzzle", () => DispatcherTimer.RunOnce(RunAllOff, TimeSpan.FromMilliseconds(300)), "Run"));
+        if (WebExtensions.Enabled)
+        {
+            try
+            {
+                foreach (var ext in await WebExtensions.Ours(c.CoreWebView2.Profile))
+                    items.Add(new MenuEntry(ext.Name, "puzzle", async () =>
+                    {
+                        try { await ext.EnableAsync(!ext.IsEnabled); }
+                        catch (Exception e) when (e is COMException or InvalidOperationException) { }
+                        // Content scripts attach on load, so the page reloads to pick the change up.
+                        c.CoreWebView2.Reload();
+                    }, ext.IsEnabled ? "On" : "Off"));
+            }
+            catch (Exception e) when (e is COMException or InvalidOperationException) { }
+        }
+        items.Add(new MenuEntry("Add an extension", "folder", () => L.Window.Ask("Add an extension",
+            $"Put an unpacked extension (its folder, with manifest.json inside) in\n{AppPaths.Extensions}\nand it loads into every site " +
+            (WebExtensions.Enabled ? "the next time a site opens." : "after Lounge restarts.") +
+            " Extensions that work inside pages (blockers, tweaks) work here; ones that only act from their toolbar button don't.",
+            ["Got it"], 0, _ => { }, "puzzle")));
+        L.Window.Menu("Extensions", items);
+    }
+
+    private async void RunAllOff()
+    {
+        var c = _host.Controller;
+        if (c is null || _pad is not { } pad) return;
+        _ = pad.Hint("AllOff is switching consent toggles off...", 3000);
+        var summary = await WebExtensions.RunAllOff(c.CoreWebView2, _frames.ToList());
+        _ = pad.Hint(summary, 6000);
     }
 
     private async void CheckDrm(CoreWebView2Controller c)
@@ -333,6 +411,11 @@ public sealed class WebScreen : Screen
             else { await pad.Key(step); await Task.Delay(700); }
             walk.Add(step + " -> " + Eval(await c.CoreWebView2.ExecuteScriptAsync("(() => { const all = document.querySelectorAll('.zylon-focus'); const e = all.length ? all[all.length - 1] : document.activeElement; return e ? (e.innerText || e.tagName).replace(/\\s+/g, ' ').slice(0, 40) : '' })()")));
         }
+        // LOUNGE_WEB_EVAL: an expression to report after the walk (what the page looks like then).
+        var probe = Environment.GetEnvironmentVariable("LOUNGE_WEB_EVAL") is { Length: > 0 } expr ? Eval(await c.CoreWebView2.ExecuteScriptAsync(expr)) : null;
+        // LOUNGE_WEB_ALLOFF: run AllOff as View > Extensions would.
+        var allOff = Environment.GetEnvironmentVariable("LOUNGE_WEB_ALLOFF") is null ? null : await WebExtensions.RunAllOff(c.CoreWebView2, _frames.ToList());
+        var extensions = WebExtensions.Enabled ? string.Join(", ", (await WebExtensions.Ours(c.CoreWebView2.Profile)).Select(x => $"{x.Name} ({(x.IsEnabled ? "on" : "off")})")) : "disabled";
         var injected = Eval(await c.CoreWebView2.ExecuteScriptAsync("String(!!window.__lounge)"));
         // What a page can see of the app around it: nothing, ideally.
         var appBridge = Eval(await c.CoreWebView2.ExecuteScriptAsync("String(!!(window.chrome && window.chrome.webview)) + ' / visible globals: ' + Object.keys(window).filter(k => /lounge/i.test(k)).join(',')"));
@@ -351,9 +434,10 @@ public sealed class WebScreen : Screen
         var drm = await EvalPromise(c.CoreWebView2, DrmProbe);
         // What a streaming site sees: each DRM system and robustness level, and the browser's brands.
         var drmMatrix = await EvalPromise(c.CoreWebView2, DrmMatrixProbe, 15000);
+        var hdcp = await EvalPromise(c.CoreWebView2, HdcpProbe, 15000);
         Lounge.Shell.SelfCheck.Report("web", new
         {
-            loaded, title, gamepadApi, padsVisibleToPage = pads, drm, drmMatrix,
+            loaded, title, gamepadApi, padsVisibleToPage = pads, drm, drmMatrix, hdcp, allOff, probe, frames = _frames.Count, extensions,
             pointerMode = pad.PointerMode, injected, keysReceived = keys, focusBefore, focusAfter, trustedClicks = clicks, appBridge, video, text, walk, geometry = _host.Geometry(), failedRequests = _failedRequests.ToArray().TakeLast(60).ToList(),
             errors = Eval(await c.CoreWebView2.ExecuteScriptAsync("(window.__loungeErrors || []).slice(-15).join(' | ')")),
             userAgent = Eval(await c.CoreWebView2.ExecuteScriptAsync("navigator.userAgent")),
@@ -486,11 +570,19 @@ public sealed class WebScreen : Screen
         _draining = true;
         try
         {
-            var raw = await web.ExecuteScriptAsync("window.__loungeQ && window.__loungeQ.length ? JSON.stringify(window.__loungeQ.splice(0)) : ''");
-            var json = System.Text.Json.JsonSerializer.Deserialize<string>(raw);
-            if (!string.IsNullOrEmpty(json))
-                foreach (var message in System.Text.Json.JsonSerializer.Deserialize<string[]>(json) ?? [])
-                    OnPageMessage(message);
+            const string take = "window.__loungeQ && window.__loungeQ.length ? JSON.stringify(window.__loungeQ.splice(0)) : ''";
+            // The page and its frames: a player (or a text field) can live in a frame.
+            var raws = new List<string> { await web.ExecuteScriptAsync(take) };
+            foreach (var frame in _frames.ToList())
+                try { raws.Add(await frame.ExecuteScriptAsync(take)); }
+                catch (Exception e) when (e is InvalidOperationException or COMException) { }
+            foreach (var raw in raws)
+            {
+                var json = System.Text.Json.JsonSerializer.Deserialize<string>(raw);
+                if (!string.IsNullOrEmpty(json))
+                    foreach (var message in System.Text.Json.JsonSerializer.Deserialize<string[]>(json) ?? [])
+                        OnPageMessage(message);
+            }
         }
         catch (Exception e) when (e is System.Text.Json.JsonException or InvalidOperationException or COMException or ArgumentException) { }
         finally { _draining = false; }
@@ -570,6 +662,7 @@ public sealed class WebScreen : Screen
             new MenuEntry("Back to Lounge", "home", Leave),
             new MenuEntry("Pointer", "mouse", () => { if (pad is not null) _ = pad.TogglePointer(); }, pad?.PointerMode == true ? "On" : "Off"),
             new MenuEntry("Keyboard", "keyboard", () => { if (c is not null) _ = TypeIntoFocused(c.CoreWebView2); }),
+            new MenuEntry("Extensions", "puzzle", ExtensionsMenu),
             new MenuEntry("Show controls", "info", () => { if (pad is not null) DispatcherTimer.RunOnce(() => _ = pad.Hint(pad.HelpText, 9000), TimeSpan.FromMilliseconds(300)); }),
             new MenuEntry("Go back a page", "back", () => { if (c?.CoreWebView2.CanGoBack == true) c.CoreWebView2.GoBack(); }),
             new MenuEntry("Reload", "refresh", () => c?.CoreWebView2.Reload()),

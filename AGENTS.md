@@ -9,6 +9,12 @@ changes when working in a dirty checkout. Build scripts live at the repository r
 Forge is the sibling `../Forge` project; Cogas's `--big-picture` flag is what the
 Cogas tile launches.
 
+AllOff (github.com/fezcode/alloff) is bundled as a squashed git subtree in
+`extensions/AllOff`; Lounge embeds its `popup/popup.js` and runs the
+`disableConsentToggles` function from it (View > Extensions on a web page). Update it
+with `git subtree pull --prefix=extensions/AllOff https://github.com/fezcode/alloff.git main --squash`
+(clean working tree first) and never edit those files here: change AllOff upstream.
+
 `Core/` and `Media/` must never reference Avalonia. A test asserts this; it is what
 keeps the router, settings, focus tree, library and the FFmpeg engine testable
 without a window. Controller input reaches the app only through `ActionRouter`

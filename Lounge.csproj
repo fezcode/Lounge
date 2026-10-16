@@ -8,7 +8,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>Lounge</RootNamespace>
     <AssemblyName>Lounge</AssemblyName>
-    <Version>1.0.15</Version>
+    <Version>1.0.16</Version>
     <Company>Fezcode</Company>
     <Product>Lounge</Product>
     <DebugType>embedded</DebugType>
@@ -24,6 +24,11 @@
     <!-- FFmpeg 8 + libass, staged by tools/fetch-native.ps1. Loaded from ffmpeg/ beside the exe. -->
     <Content Include="native/win-x64/*.dll" Link="ffmpeg/%(Filename)%(Extension)"
              CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <!-- AllOff (github.com/fezcode/alloff), bundled as a git subtree in extensions/AllOff:
+         Lounge runs its in-page function from the web view's Extensions menu (PageScripts). -->
+    <None Remove="extensions/**" />
+    <EmbeddedResource Include="extensions/AllOff/popup/popup.js" LogicalName="AllOff/popup.js" />
+    <EmbeddedResource Include="extensions/AllOff/manifest.json" LogicalName="AllOff/manifest.json" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.3.22" />

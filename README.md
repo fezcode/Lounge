@@ -69,7 +69,7 @@ button by pressing the new one. Holds and combinations work too.
   Now Playing, a queue, shuffle and repeat. It keeps playing while you browse.
 - **Ambient music** like a console home screen: soft, original, generated per
   theme (or your own folder), fading out whenever anything else plays.
-- **Web.** YouTube's TV interface, Netflix, Disney+, Prime Video and Twitch tiles
+- **Web.** YouTube's TV interface, Netflix, Disney+, Prime Video, HBO Max and Twitch tiles
   run inside Lounge, and pages read the controller themselves. If a service
   refuses protected video in the embedded view, one choice opens it in your
   full browser.

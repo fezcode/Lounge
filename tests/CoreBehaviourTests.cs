@@ -259,17 +259,56 @@ public class LaunchTests
     }
 
     [Fact]
-    public void Prime_Video_opens_in_the_full_browser_even_from_tiles_saved_before()
+    public void Prime_Video_and_HBO_Max_open_inside_Lounge_with_their_logos()
     {
-        // Amazon never plays Prime Video in an embedded browser (play stays greyed out).
-        Assert.True(TileStore.Defaults().Single(t => t.Id == "prime").OpenExternally);
+        var defaults = TileStore.Defaults();
+        var prime = defaults.FindIndex(t => t.Id == "prime");
+        Assert.False(defaults[prime].OpenExternally);
+        Assert.Equal("hbomax", defaults[prime + 1].Id);
+        Assert.False(defaults[prime + 1].OpenExternally);
+        Assert.Equal("hbomax", defaults[prime + 1].Logo);
+        Assert.Equal("hbomax", TileStore.LogoFor("https://play.hbomax.com/page/home"));
+        Assert.Equal("prime", TileStore.LogoFor("https://www.primevideo.com/"));
+        Assert.Null(TileStore.LogoFor("https://www.twitch.tv/"));
+    }
+
+    [Fact]
+    public void Tiles_saved_before_1_0_16_move_Prime_inside_and_gain_HBO_Max_once()
+    {
         using var dir = new TempDir();
-        var old = TileStore.Defaults();
-        old.Single(t => t.Id == "prime").OpenExternally = false;
+        // 1.0.9 to 1.0.15 forced Prime into the full browser, and there was no HBO Max tile.
+        var old = TileStore.Defaults().Where(t => t.Id != "hbomax").ToList();
+        old.Single(t => t.Id == "prime").OpenExternally = true;
+        old.Single(t => t.Id == "netflix").Logo = "";
         File.WriteAllText(dir.File("tiles.json"), System.Text.Json.JsonSerializer.Serialize(old));
+
         var store = new TileStore(dir.File("tiles.json"));
-        Assert.True(store.Find("prime")!.OpenExternally);
-        Assert.False(store.Find("netflix")!.OpenExternally);
+        Assert.False(store.Find("prime")!.OpenExternally);
+        Assert.Equal("netflix", store.Find("netflix")!.Logo);
+        var web = store.Web.Select(t => t.Id).ToList();
+        Assert.Equal(web.IndexOf("prime") + 1, web.IndexOf("hbomax"));
+
+        // The user's later choices stick: nothing is re-applied on the next start.
+        var prime = store.Find("prime")!.Clone();
+        prime.OpenExternally = true;
+        store.Update(prime);
+        var netflix = store.Find("netflix")!.Clone();
+        netflix.Logo = "";
+        store.Update(netflix);
+        store.Remove("hbomax");
+        var again = new TileStore(dir.File("tiles.json"));
+        Assert.True(again.Find("prime")!.OpenExternally);
+        Assert.Equal("", again.Find("netflix")!.Logo);
+        Assert.Null(again.Find("hbomax"));
+    }
+
+    [Fact]
+    public void A_fresh_start_needs_no_migrations()
+    {
+        using var dir = new TempDir();
+        var store = new TileStore(dir.File("tiles.json"));
+        store.Remove("hbomax");
+        Assert.Null(new TileStore(dir.File("tiles.json")).Find("hbomax"));
     }
 
     [Fact]

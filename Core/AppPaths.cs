@@ -27,6 +27,8 @@ public static class AppPaths
     public static string Thumbs => Dir("thumbs");
     public static string WebView => Dir("webview");
     public static string Logs => Dir("logs");
+    /// <summary>Unpacked browser extensions, one folder each, loaded into the web views.</summary>
+    public static string Extensions => Dir("extensions");
 
     private static string Dir(string name)
     {

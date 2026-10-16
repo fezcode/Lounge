@@ -66,7 +66,25 @@ public sealed class TileStore
     public TileStore(string path)
     {
         _path = path;
-        _tiles = Load();
+        _tiles = Load(out var migrated);
+        if (migrated) Save();
+    }
+
+    /// <summary>One-time changes to saved tiles, recorded beside tiles.json so each runs
+    /// once and a later choice by the user (removing a tile, switching it back) sticks.</summary>
+    private static readonly string[] Migrations = ["logos", "prime-inside", "hbomax"];
+
+    private string MigrationsPath => Path.ChangeExtension(_path, ".migrations");
+
+    private HashSet<string> ReadMigrations()
+    {
+        try { return File.Exists(MigrationsPath) ? File.ReadAllLines(MigrationsPath).Select(l => l.Trim()).Where(l => l.Length > 0).ToHashSet() : []; }
+        catch (IOException) { return []; }
+    }
+
+    private void WriteMigrations(IEnumerable<string> done)
+    {
+        if (Persist) AtomicFile.WriteAllText(MigrationsPath, string.Join(Environment.NewLine, done) + Environment.NewLine);
     }
 
     public static TileStore InMemory() => new(Path.Combine(Path.GetTempPath(), "lounge-tiles-" + Guid.NewGuid().ToString("N") + ".json")) { Persist = false };
@@ -82,21 +100,32 @@ public sealed class TileStore
     }
     public IEnumerable<Tile> HiddenTiles => _tiles.Where(t => t.Hidden);
 
-    private List<Tile> Load()
+    private List<Tile> Load(out bool migrated)
     {
-        if (!File.Exists(_path)) return Defaults();
+        migrated = false;
+        if (!File.Exists(_path)) return FreshDefaults();
         try
         {
             var tiles = JsonSerializer.Deserialize<List<Tile>>(File.ReadAllText(_path), Json) ?? Defaults();
-            // Wordmarks bundled since 1.0.10 for the default streaming tiles.
-            foreach (var t in tiles.Where(t => t.Logo.Length == 0))
-                t.Logo = Defaults().FirstOrDefault(d => d.Id == t.Id && d.Target == t.Target)?.Logo ?? "";
-            // Saved before 1.0.9: Prime Video was embedded, where Amazon never lets it play.
-            foreach (var t in tiles.Where(t => t.IsWeb && t.Target.Contains("primevideo.com", StringComparison.OrdinalIgnoreCase)))
+            var done = ReadMigrations();
+            var before = done.Count;
+            // Wordmarks bundled since 1.0.10 for the default streaming tiles. Once only: the
+            // editor can now set a tile back to its site icon.
+            if (done.Add("logos"))
+                foreach (var t in tiles.Where(t => t.Logo.Length == 0))
+                    t.Logo = Defaults().FirstOrDefault(d => d.Id == t.Id && d.Target == t.Target)?.Logo ?? "";
+            // 1.0.16: Prime Video plays inside Lounge now. 1.0.9 to 1.0.15 forced it into Edge.
+            if (done.Add("prime-inside"))
+                foreach (var t in tiles.Where(t => t.IsWeb && t.Target.Contains("primevideo.com", StringComparison.OrdinalIgnoreCase)))
+                    t.OpenExternally = false;
+            // 1.0.16: HBO Max joins the default tiles, beside Prime Video.
+            if (done.Add("hbomax") && !tiles.Any(t => t.Id == "hbomax" || t.Target.Contains("hbomax.com", StringComparison.OrdinalIgnoreCase)))
             {
-                t.OpenExternally = true;
-                if (t.Logo.Length == 0) t.Logo = "prime";
+                var prime = tiles.FindIndex(t => t.Id == "prime");
+                var at = prime >= 0 ? prime + 1 : tiles.FindLastIndex(t => t.IsWeb) + 1;
+                tiles.Insert(at > 0 ? at : tiles.Count, Defaults().Single(d => d.Id == "hbomax"));
             }
+            if (done.Count != before) { WriteMigrations(done); migrated = true; }
             return tiles;
         }
         catch (JsonException)
@@ -104,8 +133,24 @@ public sealed class TileStore
             var moved = AtomicFile.SetAside(_path);
             LoadNotice = "Your home tiles could not be read, so the defaults are back." +
                          (moved is null ? "" : $" The old file was kept as {Path.GetFileName(moved)}.");
-            return Defaults();
+            return FreshDefaults();
         }
+    }
+
+    /// <summary>The defaults already include every migration's result.</summary>
+    private List<Tile> FreshDefaults()
+    {
+        WriteMigrations(Migrations);
+        return Defaults();
+    }
+
+    /// <summary>The wordmark bundled in Assets/Logos for a streaming site's address, if any.</summary>
+    public static string? LogoFor(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var u)) return null;
+        var host = u.Host.ToLowerInvariant();
+        bool Is(string domain) => host == domain || host.EndsWith("." + domain);
+        return Is("primevideo.com") ? "prime" : Is("netflix.com") ? "netflix" : Is("hbomax.com") ? "hbomax" : null;
     }
 
     public const string TvUserAgent =
@@ -118,9 +163,8 @@ public sealed class TileStore
         new() { Id = "youtube", Kind = TileKind.Web, Name = "YouTube", Target = "https://www.youtube.com/tv", UserAgent = TvUserAgent, Color = "#FF0033" },
         new() { Id = "netflix", Kind = TileKind.Web, Name = "Netflix", Target = "https://www.netflix.com/browse", Color = "#E50914", AllowMouse = true, Logo = "netflix" },
         new() { Id = "disney", Kind = TileKind.Web, Name = "Disney+", Target = "https://www.disneyplus.com/", Color = "#113CCF", AllowMouse = true },
-        // Amazon plays Prime Video only in full browsers, not embedded ones (the page loads
-        // but play stays greyed out), so it opens in Edge with the controller mouse on.
-        new() { Id = "prime", Kind = TileKind.Web, Name = "Prime Video", Target = "https://www.primevideo.com/", Color = "#1A98FF", AllowMouse = true, OpenExternally = true, Logo = "prime" },
+        new() { Id = "prime", Kind = TileKind.Web, Name = "Prime Video", Target = "https://www.primevideo.com/", Color = "#1A98FF", AllowMouse = true, Logo = "prime" },
+        new() { Id = "hbomax", Kind = TileKind.Web, Name = "HBO Max", Target = "https://play.hbomax.com/", Color = "#0047FF", AllowMouse = true, Logo = "hbomax" },
         new() { Id = "twitch", Kind = TileKind.Web, Name = "Twitch", Target = "https://www.twitch.tv/", Color = "#9146FF", AllowMouse = true },
     ];
 
@@ -161,6 +205,7 @@ public sealed class TileStore
     {
         _tiles.Clear();
         _tiles.AddRange(Defaults());
+        WriteMigrations(Migrations);
         Save();
     }
 

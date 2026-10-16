@@ -70,22 +70,28 @@ public sealed class WebPad
           L.hint = (text, ms) => { if (!ensure()) return; hint.textContent = text; hint.style.opacity = 1; clearTimeout(timer); timer = setTimeout(() => hint.style.opacity = 0, ms || 5000); };
           L.size = () => innerWidth + ',' + innerHeight;
           // Lounge's volume display, drawn in the page (a web view covers what Lounge paints).
-          let vol, volTimer;
+          // Built element by element: pages that enforce Trusted Types (YouTube) reject
+          // innerHTML strings, which left YouTube with no volume display at all.
+          let vol, volIcon, volFill, volText, volTimer;
+          const el = (tag, css) => { const e = document.createElement(tag); e.style.cssText = css; return e; };
           L.volume = (pct, muted) => {
             const host = document.body || document.documentElement;
             if (!host) return;
             if (!vol) {
-              vol = document.createElement('div');
-              vol.style.cssText = 'position:fixed;top:48px;right:56px;display:flex;align-items:center;gap:16px;padding:16px 24px;border-radius:22px;' +
+              vol = el('div', 'position:fixed;top:48px;right:56px;display:flex;align-items:center;gap:16px;padding:16px 24px;border-radius:22px;' +
                 'background:rgba(18,18,22,.88);color:#fff;font:600 22px "Segoe UI Variable","Segoe UI",system-ui,sans-serif;z-index:2147483647;' +
-                'pointer-events:none;opacity:0;transition:opacity .25s;box-shadow:0 10px 40px rgba(0,0,0,.5)';
-              vol.innerHTML = '<span data-i></span><div style="width:220px;height:8px;border-radius:4px;background:rgba(255,255,255,.22);overflow:hidden">' +
-                '<div data-f style="height:100%;border-radius:4px;background:#fff;transition:width .12s"></div></div><span data-n style="min-width:52px;text-align:right"></span>';
+                'pointer-events:none;opacity:0;transition:opacity .25s;box-shadow:0 10px 40px rgba(0,0,0,.5)');
+              volIcon = el('span', '');
+              const track = el('div', 'width:220px;height:8px;border-radius:4px;background:rgba(255,255,255,.22);overflow:hidden');
+              volFill = el('div', 'height:100%;border-radius:4px;background:#fff;transition:width .12s');
+              track.appendChild(volFill);
+              volText = el('span', 'min-width:52px;text-align:right');
+              vol.append(volIcon, track, volText);
             }
             if (vol.parentNode !== host) host.appendChild(vol);
-            vol.querySelector('[data-i]').textContent = muted || pct === 0 ? '🔇' : pct < 50 ? '🔉' : '🔊';
-            vol.querySelector('[data-f]').style.width = (muted ? 0 : pct) + '%';
-            vol.querySelector('[data-n]').textContent = muted ? 'Muted' : pct + '%';
+            volIcon.textContent = muted || pct === 0 ? '🔇' : pct < 50 ? '🔉' : '🔊';
+            volFill.style.width = (muted ? 0 : pct) + '%';
+            volText.textContent = muted ? 'Muted' : pct + '%';
             vol.style.opacity = 1;
             clearTimeout(volTimer);
             volTimer = setTimeout(() => vol.style.opacity = 0, 1600);

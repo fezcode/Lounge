@@ -76,6 +76,7 @@ public static class Icons
         ["view"] = ("M9 9h10v10H9z M5 15V5h10", false),
         ["menu"] = ("M5 7h14 M5 12h14 M5 17h14", false),
         ["warning"] = ("M12 3l10 18H2z M12 10v5 M12 18v.01", false),
+        ["puzzle"] = ("M4 8h4a2 2 0 1 1 4 0h4v4a2 2 0 1 1 0 4v4H4v-4a2 2 0 1 0 0-4z", false),
     };
 
     public static Geometry Geometry(string name) =>
