@@ -94,13 +94,19 @@ public sealed class MainWindow : Window
         // Not the (interval, priority, callback) constructor: that one starts the timer.
         _pump = new DispatcherTimer(DispatcherPriority.Input) { Interval = TimeSpan.FromMilliseconds(8) };
         _pump.Tick += (_, _) => Pump();
-        _watch = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(250) };
+        // Normal, not Background: during video playback the UI thread is rarely idle, and a
+        // background-priority foreground check starved. Lounge then never noticed it was
+        // back in front and ignored every button and key until restarted.
+        _watch = new DispatcherTimer(DispatcherPriority.Normal) { Interval = TimeSpan.FromMilliseconds(250) };
         _watch.Tick += (_, _) => Watch();
         if (!L.Preview)
         {
             Wire();
             _pump.Start();
             _watch.Start();
+            // Focus changes (a click, Alt+Tab) take effect at once, not at the next check.
+            Activated += (_, _) => Watch();
+            Deactivated += (_, _) => Watch();
         }
         Closing += (_, e) => { if (!_exiting) { e.Cancel = true; Exit(); } };
     }
@@ -536,8 +542,13 @@ public sealed class MainWindow : Window
             DispatcherTimer.RunOnce(() => { if (L.Dormant.HasLaunchedApp) WindowState = WindowState.Minimized; }, TimeSpan.FromSeconds(3));
     }
 
+    private long _lastWatch;
+
     private void Watch()
     {
+        var at = _clock.ElapsedMilliseconds;
+        if (_lastWatch > 0 && at - _lastWatch > 2000) Log.Write($"foreground check ran {(at - _lastWatch) / 1000.0:0.0}s late");
+        _lastWatch = at;
         // Minimized but still the foreground window counts as away: otherwise Lounge keeps
         // listening while invisible and nothing (not even the return chord) brings it back.
         var minimized = Win32.IsMinimized(_hwnd);
