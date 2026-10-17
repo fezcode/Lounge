@@ -31,6 +31,7 @@ public static class K
 
     // Controller
     public const string OpenRemote = "controller.remote";
+    public const string OpenControllers = "controller.controllers";
     public const string Deadzone = "controller.deadzone";
     public const string TriggerThreshold = "controller.triggerThreshold";
     public const string Vibration = "controller.vibration";
@@ -230,6 +231,7 @@ public static class SettingsSchema
 
             // ---- Controller
             new(K.OpenRemote, "Controller", "Remote - button mapping", SettingKind.Action, null) { Help = "See every button on a controller diagram and remap it." },
+            new(K.OpenControllers, "Controller", "Controllers - button layouts", SettingKind.Action, null) { Help = "Every controller Lounge has seen, each with its own button layout. Set up a non-Xbox pad here." },
             Int(K.Deadzone, "Controller", "Stick dead zone", 24, 5, 50, 1, "%"),
             Int(K.TriggerThreshold, "Controller", "Trigger threshold", 12, 5, 60, 1, "%", "How far a trigger moves before it counts."),
             Toggle(K.Vibration, "Controller", "Vibration", true),

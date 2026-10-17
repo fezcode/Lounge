@@ -47,7 +47,7 @@ internal static class Program
             foreach (var (k, v) in new (string, object)[] { (K.PlayerVolume, 0.0), (K.Ambient, false), (K.Sounds, false), (K.ResumePrompt, false), (K.ConfirmDelete, false), (K.GpuConvert, false) })
                 L.Settings.Set(k, v);
             L.Keymap = Keymap.Defaults();
-            L.Pad = new XInputPad();
+            L.Pad = new ControllerHub(ControllerProfiles.InMemory(), readHid: false);
             L.Router = new ActionRouter(L.Keymap);
             L.Tiles = new TileStore(AppPaths.Tiles);
             L.History = new WatchHistory(AppPaths.History);

@@ -19,18 +19,7 @@ namespace Lounge.Screens;
 /// are per context (menus, watching, keyboard...), switched with LT/RT.</summary>
 public sealed class RemoteScreen : Screen
 {
-    private static readonly (PadButton Button, double X, double Y, double W, double H, double R)[] Hotspots =
-    [
-        (PadButton.LT, 182, 2, 130, 52, 20), (PadButton.RT, 588, 2, 130, 52, 20),
-        (PadButton.LB, 150, 66, 200, 38, 19), (PadButton.RB, 550, 66, 200, 38, 19),
-        (PadButton.LeftStick, 198, 198, 104, 104, 52), (PadButton.RightStick, 528, 318, 104, 104, 52),
-        (PadButton.DPadUp, 318, 318, 44, 44, 8), (PadButton.DPadDown, 318, 402, 44, 44, 8),
-        (PadButton.DPadLeft, 276, 360, 44, 44, 8), (PadButton.DPadRight, 360, 360, 44, 44, 8),
-        (PadButton.Y, 652, 162, 56, 56, 28), (PadButton.A, 652, 282, 56, 56, 28),
-        (PadButton.X, 592, 222, 56, 56, 28), (PadButton.B, 712, 222, 56, 56, 28),
-        (PadButton.View, 370, 232, 40, 40, 20), (PadButton.Menu, 490, 232, 40, 40, 20),
-        (PadButton.Guide, 416, 140, 68, 68, 34),
-    ];
+    private static readonly (PadButton Button, double X, double Y, double W, double H, double R)[] Hotspots = ControllerArt.Hotspots;
 
     private static readonly string[] ContextOrder = ["Global", "Shell", "Player", "Keyboard", "Files", "Web", "Cursor", "Dormant"];
 
@@ -55,33 +44,16 @@ public sealed class RemoteScreen : Screen
         grid.Children.Add(Ui.V(10, Ui.Header("Remote", T.Title), Ui.Muted("Pick a button on the controller to see and change what it does.", T.Body), _tabs).Margin(96, 56, 0, 10).Col(0, 2).Row(0));
 
         // ---- the controller drawing
-        var canvas = new Canvas { Width = 900, Height = 640 };
-        canvas.Children.Add(new Path
-        {
-            Data = Geometry.Parse("M 250,120 C 320,95 580,95 650,120 C 760,130 820,170 850,260 C 890,380 905,520 870,585 C 840,630 780,620 745,575 C 700,515 660,470 600,465 L 300,465 C 240,470 200,515 155,575 C 120,620 60,630 30,585 C -5,520 10,380 50,260 C 80,170 140,130 250,120 Z"),
-            Fill = new LinearGradientBrush
-            {
-                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative), EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
-                GradientStops = { new GradientStop(Color.FromArgb(70, 255, 255, 255), 0), new GradientStop(Color.FromArgb(25, 255, 255, 255), 1) },
-            },
-            Stroke = T.Line, StrokeThickness = 2,
-        });
-        var cross = new Path { Data = Geometry.Parse("M 318,318 h 44 v 42 h 42 v 44 h -42 v 42 h -44 v -42 h -42 v -44 h 42 Z"), Fill = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)) };
-        canvas.Children.Add(cross);
+        var canvas = new Canvas { Width = ControllerArt.Width, Height = ControllerArt.Height };
+        ControllerArt.DrawBody(canvas);
         foreach (var (b, x, y, w, h, r) in Hotspots)
         {
-            var label = Ui.Text(Hints.ShortName(b), b is PadButton.DPadUp or PadButton.DPadDown or PadButton.DPadLeft or PadButton.DPadRight ? 20 : 22, T.Text, FontWeight.Bold);
-            label.HorizontalAlignment = HorizontalAlignment.Center;
-            label.VerticalAlignment = VerticalAlignment.Center;
-            var face = Hints.Glyph(b, Math.Min(w, h) - 6);
             var spot = new Border
             {
                 Width = w, Height = h, CornerRadius = new CornerRadius(r),
                 Background = new SolidColorBrush(Color.FromArgb(55, 255, 255, 255)),
                 BorderBrush = T.Line, BorderThickness = new Thickness(1.5),
-                Child = b is PadButton.A or PadButton.B or PadButton.X or PadButton.Y ? face.Align(HorizontalAlignment.Center, VerticalAlignment.Center)
-                    : b is PadButton.View or PadButton.Menu ? Icons.Make(b == PadButton.View ? "view" : "menu", 22, T.Text, 2).Align(HorizontalAlignment.Center, VerticalAlignment.Center)
-                    : label,
+                Child = ControllerArt.Face(b, w, h),
             };
             var card = new Card(spot, r) { FocusScale = 1.18 };
             card.Body.Background = Brushes.Transparent;
@@ -318,6 +290,7 @@ public sealed class RemoteScreen : Screen
                     L.Window.Menu("Remote",
                     [
                         new MenuEntry($"Reset \"{Keymap.ContextLabels[Ctx]}\"", "refresh", () => { L.Keymap.ResetContext(Ctx); ShowBindings(); }),
+                        new MenuEntry("Controllers and their button layouts", "gamepad", () => L.Window.Push(new ControllersScreen())),
                         new MenuEntry("Reset every button", "refresh", () => { L.Keymap.ResetAll(); ShowBindings(); }, Danger: true),
                     ]);
                     return true;

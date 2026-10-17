@@ -277,6 +277,10 @@ public sealed class SettingsPanel : Grid, IInputLayer
                 Close();
                 L.Window.Push(new RemoteScreen());
                 break;
+            case K.OpenControllers:
+                Close();
+                L.Window.Push(new ControllersScreen());
+                break;
             case K.Rescan:
                 _ = LibraryService.ScanAsync(quiet: false);
                 L.Window.Toast("Scanning your library...", "refresh");

@@ -102,7 +102,7 @@ public class App : Application
         if (!File.Exists(AppPaths.Settings)) L.Settings.SaveAll();
         L.Keymap = Keymap.Load(AppPaths.Keymap, out _keymapNotice);
         L.Keymap.Changed += () => L.Keymap.Save(AppPaths.Keymap);
-        L.Pad = new XInputPad();
+        L.Pad = new ControllerHub(new ControllerProfiles(AppPaths.Controllers));
         L.Router = new ActionRouter(L.Keymap);
         L.ApplyRouterOptions();
         L.Tiles = new TileStore(AppPaths.Tiles);

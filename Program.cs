@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Lounge.Core;
 using Lounge.Core.Library;
 using Lounge.Core.Settings;
@@ -73,7 +73,7 @@ internal static class Program
             var settings = SettingsStore.OpenDefault();
             settings.SaveAll();
             if (!File.Exists(AppPaths.PlayerConfig)) failures.Add("config.ini was not written");
-            _ = new Lounge.Core.Input.XInputPad().Read(0);
+            _ = new Lounge.Core.Input.XInputPad().ReadSlots(0);
         }
         catch (Exception e) { failures.Add($"{e.GetType().Name}: {e.Message}"); }
         finally

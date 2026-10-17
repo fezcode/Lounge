@@ -8,7 +8,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>Lounge.Agent</RootNamespace>
     <AssemblyName>LoungeAgent</AssemblyName>
-    <Version>1.0.17</Version>
+    <Version>1.0.18</Version>
     <Company>Fezcode</Company>
     <Product>Lounge</Product>
     <DebugType>embedded</DebugType>
@@ -22,6 +22,7 @@
     <Compile Include="../Core/AtomicFile.cs" Link="Core/AtomicFile.cs" />
     <Compile Include="../Core/Settings/*.cs" LinkBase="Core/Settings" />
     <Compile Include="../Core/Input/PadState.cs" Link="Core/Input/PadState.cs" />
+    <Compile Include="../Core/Input/ControllerLayout.cs" Link="Core/Input/ControllerLayout.cs" />
     <Compile Include="../Core/Input/XInputPad.cs" Link="Core/Input/XInputPad.cs" />
     <Compile Include="../Platform/Win32.cs" Link="Platform/Win32.cs" />
     <Compile Include="../Core/Launch/AgentPolicy.cs" Link="Core/Launch/AgentPolicy.cs" />

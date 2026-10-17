@@ -117,6 +117,13 @@ public sealed class MainWindow : Window
     {
         L.Router.Fired += HandleAction;
         L.Router.ConnectionChanged += OnPadConnection;
+        // A gamepad that isn't an Xbox pad starts on Lounge's best guess at its buttons.
+        L.Pad.Profiles.Added += p =>
+        {
+            Log.Write($"new controller: {p.Name} ({p.Id})");
+            if (p.Kind == ControllerKind.Hid)
+                Toast($"New controller: {p.Name}. Set up its buttons in Settings > Controller > Controllers.", "gamepad", 7);
+        };
         L.Router.Activity += () =>
         {
             NoteInput();
@@ -749,8 +756,10 @@ public sealed class MainWindow : Window
             Playback.RememberCurrent();
             L.History.Save();
             L.Keymap.Save(AppPaths.Keymap);
+            L.Pad.Profiles.Save();   // when each controller was last seen
         }
         catch (IOException) { }
+        L.Pad.Dispose();
         L.Sound.SetAmbient(false);
         L.Player.Close();
         Close();

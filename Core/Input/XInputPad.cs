@@ -1,9 +1,9 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 
 namespace Lounge.Core.Input;
 
-/// <summary>Reads Xbox controllers through XInput and merges every connected pad, so
-/// whichever one is in hand works (after Cogas's reader). The Xbox button comes from the
+/// <summary>Reads Xbox controllers through XInput, each slot on its own with its model
+/// (ControllerHub applies each pad's layout and merges them). The Xbox button comes from the
 /// undocumented XInputGetStateEx (ordinal 100), which every xinput1_4 exports; it is
 /// only reported when <see cref="ReadGuide"/> is on, because Game Bar owns it by default.
 /// Empty slots are probed once a second: asking XInput about them is slow.</summary>
@@ -22,13 +22,25 @@ public sealed class XInputPad
 
     public int ConnectedCount => _connected.Count(c => c);
 
-    /// <summary>The merged state of every connected pad at <paramref name="nowMs"/>.</summary>
-    public PadState Read(long nowMs)
+    private readonly (int Vid, int Pid)[] _model = new (int, int)[Slots];
+
+    /// <summary>One connected pad: its slot, model (vendor and product ID) and raw inputs.</summary>
+    public readonly record struct Slot(int Index, int VendorId, int ProductId, RawPad Raw);
+
+    private static readonly PadButton[] Buttons =
+    [
+        PadButton.DPadUp, PadButton.DPadDown, PadButton.DPadLeft, PadButton.DPadRight, PadButton.Menu, PadButton.View,
+        PadButton.LeftStick, PadButton.RightStick, PadButton.LB, PadButton.RB, PadButton.Guide,
+        PadButton.A, PadButton.B, PadButton.X, PadButton.Y,
+    ];
+
+    /// <summary>Every connected pad at <paramref name="nowMs"/>, each on its own.</summary>
+    public List<Slot> ReadSlots(long nowMs)
     {
-        if (_unavailable) return PadState.Disconnected;
+        var slots = new List<Slot>(Slots);
+        if (_unavailable) return slots;
         var probe = ShouldProbe(_lastProbe, nowMs);
         if (probe) _lastProbe = nowMs;
-        var states = new List<PadState>(Slots);
         try
         {
             for (int i = 0; i < Slots; i++)
@@ -42,23 +54,66 @@ public sealed class XInputPad
                     catch (EntryPointNotFoundException) { _exUnavailable = true; rc = XInputGetState(i, out s); }
                 }
                 else rc = XInputGetState(i, out s);
+                var was = _connected[i];
                 _connected[i] = rc == 0;
                 if (rc != 0) continue;
+                if (!was) _model[i] = Model(i);
                 var g = s.Gamepad;
-                var buttons = (PadButton)g.wButtons;
-                if (!ReadGuide) buttons &= ~PadButton.Guide;
-                states.Add(new PadState(true, buttons,
-                    g.bLeftTrigger / 255f, g.bRightTrigger / 255f,
-                    Norm(g.sThumbLX), Norm(g.sThumbLY), Norm(g.sThumbRX), Norm(g.sThumbRY)));
+                var raw = new RawPad();
+                foreach (var b in Buttons)
+                    raw.Inputs[b.ToString()] = (g.wButtons & (ushort)b) != 0 && (b != PadButton.Guide || ReadGuide) ? 1 : 0;
+                raw.Inputs["lx"] = Norm(g.sThumbLX); raw.Inputs["ly"] = Norm(g.sThumbLY);
+                raw.Inputs["rx"] = Norm(g.sThumbRX); raw.Inputs["ry"] = Norm(g.sThumbRY);
+                raw.Inputs["lt"] = g.bLeftTrigger / 255f; raw.Inputs["rt"] = g.bRightTrigger / 255f;
+                slots.Add(new Slot(i, _model[i].Vid, _model[i].Pid, raw));
             }
         }
         catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException)
         {
             _unavailable = true;
-            return PadState.Disconnected;
+            slots.Clear();
         }
-        return states.Count == 0 ? PadState.Disconnected : PadState.Merge(states);
+        return slots;
     }
+
+    private static readonly Dictionary<string, SourceBinding> DefaultLayout = ControllerLayout.XInputDefault();
+
+    /// <summary>The merged state of every connected pad at <paramref name="nowMs"/>.</summary>
+    public PadState Read(long nowMs)
+    {
+        var slots = ReadSlots(nowMs);
+        return slots.Count == 0 ? PadState.Disconnected : PadState.Merge(slots.Select(s => ControllerLayout.Apply(DefaultLayout, s.Raw)));
+    }
+
+    private bool _capsUnavailable;
+
+    /// <summary>The pad's vendor and product ID from the undocumented XInputGetCapabilitiesEx
+    /// (ordinal 108); a plain Microsoft pad when it isn't there.</summary>
+    private (int, int) Model(int slot)
+    {
+        if (_capsUnavailable) return (0x045E, 0);
+        try
+        {
+            if (XInputGetCapabilitiesEx(1, slot, 0, out var caps) == 0) return (caps.VendorId, caps.ProductId);
+        }
+        catch (EntryPointNotFoundException) { _capsUnavailable = true; }
+        return (0x045E, 0);
+    }
+
+    /// <summary>A readable name for an XInput pad's model.</summary>
+    public static string ModelName(int vendorId, int productId) => (vendorId, productId) switch
+    {
+        (0x045E, 0x028E) => "Xbox 360 Controller",
+        (0x045E, 0x02D1 or 0x02DD or 0x02EA or 0x02E0 or 0x02FD or 0x0B20) => "Xbox One Controller",
+        (0x045E, 0x0B00 or 0x0B05 or 0x0B22) => "Xbox Elite Controller Series 2",
+        (0x045E, 0x0B12 or 0x0B13) => "Xbox Wireless Controller",
+        (0x045E, _) => "Xbox Controller",
+        (0x2DC8, _) => "8BitDo Controller (XInput)",
+        (0x054C, _) => "PlayStation Controller (XInput)",
+        (0x046D, _) => "Logitech Gamepad (XInput)",
+        (0x0E6F or 0x24C6 or 0x0F0D or 0x1532 or 0x20D6, _) => "Xbox-compatible Controller",
+        _ => "XInput Controller",
+    };
 
     /// <summary>Turns a feedback request into a pulse a hand actually notices. Motors need
     /// about 150 ms and a good share of power to be felt (tried on an Xbox Wireless
@@ -124,6 +179,21 @@ public sealed class XInputPad
     {
         public ushort wLeftMotorSpeed, wRightMotorSpeed;
     }
+
+    /// <summary>XINPUT_CAPABILITIES followed by the Ex fields.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    private struct XInputCapabilitiesEx
+    {
+        public byte Type, SubType;
+        public ushort Flags;
+        public XInputGamepad Gamepad;
+        public XInputVibration Vibration;
+        public ushort VendorId, ProductId, ProductVersion, Unknown1;
+        public uint Unknown2;
+    }
+
+    [DllImport("xinput1_4.dll", EntryPoint = "#108")]
+    private static extern int XInputGetCapabilitiesEx(int a1, int userIndex, int flags, out XInputCapabilitiesEx caps);
 
     [DllImport("xinput1_4.dll")]
     private static extern int XInputGetState(int userIndex, out XInputState state);

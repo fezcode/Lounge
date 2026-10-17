@@ -97,6 +97,7 @@ internal static class Program
                 Show(new NowPlayingScreen(), $"{t}-nowplaying");
                 Show(new AppsScreen(), $"{t}-apps");
                 Show(new RemoteScreen(), $"{t}-remote");
+            Show(new ControllersScreen(), $"{t}-controllers");
 
                 var files = new FilesScreen(sample);
                 _window.Push(files);
@@ -148,7 +149,10 @@ internal static class Program
         L.Settings.Set(K.Ambient, false);
         L.Settings.Set(K.Sounds, false);
         L.Keymap = Keymap.Defaults();
-        L.Pad = new XInputPad();
+        L.Pad = new ControllerHub(ControllerProfiles.InMemory(), readHid: false);
+        // Two controllers for the Controllers screen: an Xbox pad and an HID pad nobody set up yet.
+        L.Pad.Profiles.For(new ControllerInfo(ControllerHub.XInputId(0x045E, 0x0B13, 0), "Xbox Wireless Controller (slot 1)", ControllerKind.XInput, 0x045E, 0x0B13));
+        L.Pad.Profiles.For(new ControllerInfo("hid-2dc8-9020-e4a1c0d2b7f3", "8BitDo Micro gamepad", ControllerKind.Hid, 0x2DC8, 0x9020));
         L.Router = new ActionRouter(L.Keymap);
         L.Tiles = new TileStore(AppPaths.Tiles);
         L.History = new WatchHistory(AppPaths.History);

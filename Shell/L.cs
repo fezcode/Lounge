@@ -1,4 +1,4 @@
-﻿using Lounge.Core;
+using Lounge.Core;
 using Lounge.Core.Audio;
 using Lounge.Core.Input;
 using Lounge.Core.Launch;
@@ -17,7 +17,8 @@ public static class L
     public static SettingsStore Settings { get; set; } = null!;
     public static Keymap Keymap { get; set; } = null!;
     public static ActionRouter Router { get; set; } = null!;
-    public static XInputPad Pad { get; set; } = null!;
+    /// <summary>Every controller (XInput and HID), each through its own button layout.</summary>
+    public static ControllerHub Pad { get; set; } = null!;
     public static TileStore Tiles { get; set; } = null!;
     public static WatchHistory History { get; set; } = null!;
     public static LibraryDb Library { get; set; } = null!;
