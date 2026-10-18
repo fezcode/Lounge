@@ -1,6 +1,6 @@
 [app]
 name    = "Lounge"
-version = "1.0.18"
+version = "1.0.19"
 id      = "io.fezcode.lounge"
 icon    = "Assets/Lounge.ico"
 
@@ -38,7 +38,7 @@ registry_values = [
 [[steps]]
 type  = "welcome"
 title = "Welcome"
-body  = "This wizard will install Lounge 1.0.18 on your computer.\n\nLounge turns this PC into a living-room media center you drive entirely with an Xbox controller: films, shows and music in its own player, streaming sites, your apps and games, and a file explorer, all from the couch.\n\nClick Next to continue."
+body  = "This wizard will install Lounge 1.0.19 on your computer.\n\nLounge turns this PC into a living-room media center you drive entirely with an Xbox controller: films, shows and music in its own player, streaming sites, your apps and games, and a file explorer, all from the couch.\n\nClick Next to continue."
 
 [[steps]]
 type  = "license"
@@ -49,7 +49,7 @@ file  = "LICENSE.txt"
 [[steps]]
 type  = "folder"
 title = "Location"
-body  = "Choose where to install Lounge 1.0.18."
+body  = "Choose where to install Lounge 1.0.19."
 
 [[steps]]
 type  = "shortcuts"
@@ -114,4 +114,4 @@ data  = "${INSTALLDIR}"
 hive  = "HKCU"
 key   = "Software\\fezcode\\Lounge"
 value = "Version"
-data  = "1.0.18"
+data  = "1.0.19"

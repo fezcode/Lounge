@@ -76,6 +76,7 @@ public sealed class ControllersScreen : BrowseScreen
             if (!connected) { L.Window.Toast($"Connect {p.Name} first.", "warning"); return; }
             L.Window.Push(new ControllerSetupScreen(p));
         }, p.Configured ? "Set" : "Guessed"),
+        new MenuEntry("Copy this layout to...", "copy", () => CopyMenu(p)),
         new MenuEntry("Rename", "pencil", async () =>
         {
             var name = await L.Window.KeyboardAsync(new KeyboardRequest("Controller name", p.Name, Validate: s => string.IsNullOrWhiteSpace(s) ? "A name can't be empty." : null));
@@ -85,6 +86,35 @@ public sealed class ControllersScreen : BrowseScreen
         new MenuEntry("Forget this controller", "trash", () => L.Window.Ask($"Forget {p.Name}?", "Its name and button layout go. If it connects again it starts on the default layout.",
             ["Forget", "Cancel"], 1, i => { if (i == 0) L.Pad.Profiles.Forget(p.Id); }, "trash"), Danger: true),
     ]);
+
+    /// <summary>Copy one controller's buttons to others of the same kind (the same model is
+    /// marked: it is the case where a copy is exactly right).</summary>
+    private static void CopyMenu(ControllerProfile p)
+    {
+        var targets = L.Pad.Profiles.CopyTargets(p.Id);
+        var kind = p.Kind == ControllerKind.XInput ? "Xbox (XInput)" : "HID";
+        if (targets.Count == 0)
+        {
+            L.Window.Toast($"There's no other {kind} controller to copy to. Layouts only carry over between controllers of the same kind.", "info", 5);
+            return;
+        }
+        var items = targets.Select(t => new MenuEntry(t.Name, "gamepad", () => Confirm(p, [t]),
+            t.VendorId == p.VendorId && t.ProductId == p.ProductId ? "Same model" : $"{t.VendorId:X4}:{t.ProductId:X4}")).ToList();
+        if (targets.Count > 1)
+            items.Insert(0, new MenuEntry($"All other {kind} controllers", "copy", () => Confirm(p, targets), $"{targets.Count}"));
+        L.Window.Menu($"Copy {p.Name}'s layout to", items);
+    }
+
+    private static void Confirm(ControllerProfile from, IReadOnlyList<ControllerProfile> to)
+    {
+        var who = to.Count == 1 ? to[0].Name : $"{to.Count} controllers";
+        L.Window.Ask($"Copy to {who}?", $"{(to.Count == 1 ? "Its" : "Their")} own button layout is replaced by {from.Name}'s.", ["Copy", "Cancel"], 1, i =>
+        {
+            if (i != 0) return;
+            var n = L.Pad.Profiles.CopyLayout(from.Id, to.Select(t => t.Id));
+            L.Window.Toast(n == 1 ? $"{to[0].Name} now uses {from.Name}'s buttons." : $"{n} controllers now use {from.Name}'s buttons.", "check");
+        }, "copy");
+    }
 }
 
 /// <summary>Teaches Lounge one controller's buttons: it asks for each Xbox-layout input in
@@ -126,6 +156,7 @@ public sealed class ControllerSetupScreen : Screen
                 Background = new SolidColorBrush(Color.FromArgb(55, 255, 255, 255)), BorderBrush = T.Line, BorderThickness = new Thickness(1.5),
                 Child = ControllerArt.Face(b, w, h), [Canvas.LeftProperty] = x, [Canvas.TopProperty] = y,
             };
+            ControllerArt.Tilt(spot, b);
             canvas.Children.Add(spot);
             _spots[b] = spot;
         }

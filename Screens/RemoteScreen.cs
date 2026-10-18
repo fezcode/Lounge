@@ -57,12 +57,15 @@ public sealed class RemoteScreen : Screen
             };
             var card = new Card(spot, r) { FocusScale = 1.18 };
             card.Body.Background = Brushes.Transparent;
-            Canvas.SetLeft(card, x);
-            Canvas.SetTop(card, y);
+            // The card clips its content, so a tilted bumper or trigger tilts card and all.
+            var holder = new Panel { Children = { card } };
+            ControllerArt.Tilt(holder, b);
+            Canvas.SetLeft(holder, x);
+            Canvas.SetTop(holder, y);
             var button = b;
             card.Focused += f => { if (f) { _button = button; ShowBindings(); } };
             card.Item.Activate = () => { if (_rows.HasItems) FocusItem(_rows.Items.First()); };
-            canvas.Children.Add(card);
+            canvas.Children.Add(holder);
             _pad.Add(card.Item);
             _spots[b] = (spot, card);
         }

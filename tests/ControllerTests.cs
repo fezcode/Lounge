@@ -124,6 +124,30 @@ public class ControllerTests
     }
 
     [Fact]
+    public void A_layout_copies_to_controllers_of_the_same_kind_only()
+    {
+        using var dir = new TempDir();
+        var path = dir.File("controllers.json");
+        var store = new ControllerProfiles(path);
+        var micro1 = store.For(new ControllerInfo("hid-a", "Micro 1", ControllerKind.Hid, 0x2DC8, 0x9020));
+        store.For(new ControllerInfo("hid-b", "Micro 2", ControllerKind.Hid, 0x2DC8, 0x9020));
+        store.For(new ControllerInfo("hid-c", "Generic pad", ControllerKind.Hid, 0x0079, 0x0011));
+        store.For(new ControllerInfo("xinput-045e-0b13-1", "Xbox", ControllerKind.XInput, 0x045E, 0x0B13));
+        store.SetLayout(micro1.Id, new Dictionary<string, SourceBinding>(micro1.Layout) { ["A"] = new("b9") });
+
+        Assert.Equal(new[] { "hid-b", "hid-c" }, store.CopyTargets("hid-a").Select(p => p.Id).Order());
+        Assert.Equal(2, store.CopyLayout("hid-a", ["hid-b", "hid-c", "xinput-045e-0b13-1", "hid-a"]));
+
+        var again = new ControllerProfiles(path);
+        Assert.Equal(new SourceBinding("b9"), again.Find("hid-b")!.Layout["A"]);
+        Assert.True(again.Find("hid-c")!.Configured);
+        Assert.Equal(new SourceBinding("A"), again.Find("xinput-045e-0b13-1")!.Layout["A"]);   // untouched: another kind
+        // The copy is its own: changing the source later doesn't move the others.
+        store.SetLayout("hid-a", new Dictionary<string, SourceBinding>(store.Find("hid-a")!.Layout) { ["A"] = new("b1") });
+        Assert.Equal(new SourceBinding("b9"), new ControllerProfiles(path).Find("hid-b")!.Layout["A"]);
+    }
+
+    [Fact]
     public void Every_target_has_a_prompt_and_a_default_for_each_kind()
     {
         foreach (var t in ControllerLayout.Targets)

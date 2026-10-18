@@ -83,6 +83,34 @@ public sealed class ControllerProfiles
         Save();
     }
 
+    /// <summary>Gives other controllers the same button layout as <paramref name="fromId"/>.
+    /// Only controllers of the same kind take it: an HID pad's buttons are numbered, an XInput
+    /// pad's are named, so one's layout means nothing to the other. Returns how many changed.</summary>
+    public int CopyLayout(string fromId, IEnumerable<string> toIds)
+    {
+        var copied = 0;
+        lock (_gate)
+        {
+            if (!_byId.TryGetValue(fromId, out var from)) return 0;
+            foreach (var id in toIds)
+            {
+                if (id == fromId || !_byId.TryGetValue(id, out var to) || to.Kind != from.Kind) continue;
+                to.Layout = new Dictionary<string, SourceBinding>(from.Layout);
+                to.Configured = from.Configured;
+                copied++;
+            }
+        }
+        if (copied > 0) Save();
+        return copied;
+    }
+
+    /// <summary>The controllers that can take <paramref name="fromId"/>'s layout.</summary>
+    public IReadOnlyList<ControllerProfile> CopyTargets(string fromId)
+    {
+        var from = Find(fromId);
+        return from is null ? [] : All.Where(p => p.Id != fromId && p.Kind == from.Kind).ToList();
+    }
+
     public void Rename(string id, string name)
     {
         lock (_gate) { if (_byId.TryGetValue(id, out var p) && !string.IsNullOrWhiteSpace(name)) p.Name = name.Trim(); }
