@@ -232,11 +232,11 @@ public sealed class TileEditorScreen : BrowseScreen
                 _tile.AllowMouse = !tv;
             });
         }
-        if (_tile.Kind != TileKind.Cogas)
+        if (_tile.Kind is not (TileKind.Cogas or TileKind.Builtin))
             Row("mouse", _tile.IsWeb ? "Start with the pointer" : "Start with the controller mouse",
                 () => _tile.AllowMouse ? "Yes" : _tile.IsWeb ? "No, arrow keys" : "No (hold View + B for it)",
                 () => _tile.AllowMouse = !_tile.AllowMouse);
-        if (!_tile.IsWeb)
+        if (!_tile.IsWeb && _tile.Kind != TileKind.Builtin)
         {
             Row("game", "This is a game", () => _tile.IsGame ? "Yes" : "No", () => _tile.IsGame = !_tile.IsGame);
             Row("return", "When you come back", () => _tile.OnReturn switch

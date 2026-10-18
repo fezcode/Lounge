@@ -16,7 +16,8 @@ public sealed record AmbientPreset(
     int[] NoteScale,          // MIDI notes the melody picks from
     double NoteBrightness,
     double Reverb,            // wet mix 0..1
-    double PulseHz = 0);      // slow amplitude breathing, 0 = none
+    double PulseHz = 0,       // slow amplitude breathing, 0 = none
+    bool Chip = false);       // chiptune voices: pulse waves instead of soft sines
 
 /// <summary>Procedural ambient music, so every theme has its own original score and
 /// nothing has to be licensed or shipped. Produces 48 kHz stereo float samples forever.
@@ -51,6 +52,11 @@ public sealed class AmbientSynth
         ["screening"] = new("screening", "Screening Room",
             [[38, 45, 53, 57, 60, 64], [43, 50, 53, 57, 59, 64], [36, 43, 52, 55, 59, 62], [45, 52, 55, 58, 61]],
             11.0, 0.11, 0.25, 6, 0.3, 0.13, 3.2, [62, 64, 65, 67, 69, 71, 72, 74, 77], 0.35, 0.62),
+        // An arcade attract loop: pulse-wave chords on the old Am-F-C-G turn, quick chip
+        // plucks from the pentatonic, a small dry room.
+        ["arcade"] = new("arcade", "Arcade",
+            [[45, 57, 60, 64], [41, 53, 57, 60], [48, 55, 60, 64], [43, 55, 59, 62]],
+            4.0, 0.06, 0.5, 8, 2.6, 0.07, 0.22, [69, 72, 74, 76, 79, 81, 84, 86], 0.5, 0.22, Chip: true),
     };
 
     private readonly AmbientPreset _p;
@@ -141,7 +147,7 @@ public sealed class AmbientSynth
             note = _p.NoteScale.Where(n => n % 12 == pc).DefaultIfEmpty(note).OrderBy(_ => _rng.Next()).First();
         }
         var velocity = 0.55 + 0.45 * _rng.NextDouble();
-        _notes.Add(new Voice(Hz(note), _p.NoteDecay * (0.7 + 0.6 * _rng.NextDouble()), _p.NoteBrightness, velocity, 0.2 + 0.6 * _rng.NextDouble()));
+        _notes.Add(new Voice(Hz(note), _p.NoteDecay * (0.7 + 0.6 * _rng.NextDouble()), _p.NoteBrightness, velocity, 0.2 + 0.6 * _rng.NextDouble(), _p.Chip));
         if (_notes.Count > 24) _notes.RemoveAt(0);
     }
 
@@ -171,6 +177,8 @@ public sealed class AmbientSynth
             _ph1 += _freq / sr; _ph2 += _freq * spread / sr; _ph3 += _freq * 2 / sr;
             _ph1 -= Math.Floor(_ph1); _ph2 -= Math.Floor(_ph2); _ph3 -= Math.Floor(_ph3);
             var b = p.PadBrightness;
+            // Chip: two detuned pulse waves at 25% duty, the classic console square lead.
+            if (p.Chip) return ((_ph1 < 0.25 ? 1 : -0.33) + (_ph2 < 0.25 ? 1 : -0.33)) * 0.18 * _amp;
             var s = Math.Sin(2 * Math.PI * _ph1) + Math.Sin(2 * Math.PI * _ph2)
                   + b * 0.5 * Math.Sin(4 * Math.PI * _ph1) + b * 0.35 * Math.Sin(2 * Math.PI * _ph3)
                   + b * b * 0.2 * Math.Sin(6 * Math.PI * _ph2);
@@ -183,13 +191,14 @@ public sealed class AmbientSynth
     private sealed class Voice
     {
         private readonly double _f, _decay, _bright, _vel;
+        private readonly bool _chip;
         private double _t, _ph1, _ph2, _ph3;
         public readonly double Pan;
         public bool Done => _t > _decay * 6;
 
-        public Voice(double f, double decay, double bright, double vel, double pan)
+        public Voice(double f, double decay, double bright, double vel, double pan, bool chip = false)
         {
-            _f = f; _decay = decay; _bright = bright; _vel = vel; Pan = pan;
+            _f = f; _decay = decay; _bright = bright; _vel = vel; Pan = pan; _chip = chip;
         }
 
         public double Next(int sr)
@@ -199,6 +208,8 @@ public sealed class AmbientSynth
             var env = attack * Math.Exp(-_t / _decay);
             _ph1 += _f / sr; _ph2 += _f * 2.0 / sr; _ph3 += _f * 3.01 / sr;
             _ph1 -= Math.Floor(_ph1); _ph2 -= Math.Floor(_ph2); _ph3 -= Math.Floor(_ph3);
+            // Chip: a 50% square pluck, an octave pulse on top while it's fresh.
+            if (_chip) return ((_ph1 < 0.5 ? 1 : -1) * 0.6 + _bright * (_ph2 < 0.25 ? 0.3 : -0.1) * Math.Exp(-_t / 0.05)) * env * _vel * 0.32;
             var upper = Math.Exp(-_t / (_decay * 0.25));
             var s = Math.Sin(2 * Math.PI * _ph1)
                   + _bright * 0.45 * upper * Math.Sin(2 * Math.PI * _ph2)

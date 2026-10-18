@@ -1,4 +1,4 @@
-﻿namespace Lounge.Core.Input;
+namespace Lounge.Core.Input;
 
 /// <summary>Everything the controller can ask Lounge to do. Modules react to these and
 /// never to buttons, which is what makes every button remappable.</summary>
@@ -42,6 +42,7 @@ public static class Act
     public const string ToggleSubtitles = "Player.ToggleSubtitles";
     public const string NextItem = "Player.Next";
     public const string PrevItem = "Player.Previous";
+    public const string Screenshot = "Player.Screenshot";
 
     // On-screen keyboard
     public const string KeyBackspace = "Keyboard.Backspace";
@@ -82,6 +83,7 @@ public static class Act
         new(BigSkipForward, "Long skip forward", true), new(BigSkipBack, "Long skip back", true),
         new(Tracks, "Audio, subtitles and picture"), new(Info, "Information"),
         new(ToggleSubtitles, "Subtitles on/off"), new(NextItem, "Next in queue"), new(PrevItem, "Previous in queue"),
+        new(Screenshot, "Take a screenshot"),
         new(KeyBackspace, "Backspace", true), new(KeySpace, "Space", true),
         new(KeyCursorLeft, "Cursor left", true), new(KeyCursorRight, "Cursor right", true),
         new(KeyShift, "Shift / symbols"), new(KeySuggest, "Accept suggestion"), new(KeyDone, "Done"),

@@ -49,6 +49,7 @@ public static class K
     public const string NextUpSeconds = "playback.nextUpSeconds";
     public const string SkipSeconds = "playback.skipSeconds";
     public const string BigSkipSeconds = "playback.bigSkipSeconds";
+    public const string ScreenshotFolder = "playback.screenshotFolder";
     public const string SeekBands = "playback.seekBands";
     public const string OsdSeconds = "playback.osdSeconds";
     public const string PlayerVolume = "volume";
@@ -140,6 +141,7 @@ public static class SettingsSchema
         new("console", "Console One"),
         new("series", "Series"),
         new("screening", "Screening Room"),
+        new("arcade", "Arcade"),
     ];
 
     public static readonly IReadOnlyList<SettingChoice> Accents =
@@ -249,6 +251,7 @@ public static class SettingsSchema
             Int(K.NextUpSeconds, "Playback", "Show \"Next up\"", 20, 5, 60, 5, " s before end"),
             Int(K.SkipSeconds, "Playback", "Short skip", 10, 5, 60, 5, " s"),
             Int(K.BigSkipSeconds, "Playback", "Long skip", 60, 30, 600, 30, " s"),
+            new(K.ScreenshotFolder, "Playback", "Screenshot folder", SettingKind.Path, "") { Help = "Where \"Take a screenshot\" saves pictures of the video. Default is your Desktop." },
             Choice(K.SeekBands, "Playback", "Trigger seek speeds", "2,4,8,16,32",
                 C("2,4,8", "Gentle (2x-8x)", "2,4,8,16,32", "Standard (2x-32x)", "4,8,16,32,64", "Fast (4x-64x)"),
                 "Pressing a trigger further moves through these speeds."),

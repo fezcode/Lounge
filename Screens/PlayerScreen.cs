@@ -543,6 +543,7 @@ public sealed class PlayerScreen : Screen
                 UpdateInfo();
                 return true;
             case Act.ToggleSubtitles: ToggleSubtitles(); return true;
+            case Act.Screenshot: TakeScreenshot(); return true;
             case Act.ContextMenu: Options(); return true;
             case Act.Stop or Act.Back:
                 L.Play(UiSound.Back);
@@ -726,6 +727,38 @@ public sealed class PlayerScreen : Screen
         L.Window.Menu("Subtitles", items);
     }
 
+    private bool _shooting;
+
+    /// <summary>Saves the frame on screen, at the video's full resolution, as a PNG in the
+    /// screenshot folder (Settings > Playback; the Desktop by default). The frame is decoded
+    /// again on its own, so playback isn't interrupted; subtitles aren't included.</summary>
+    private void TakeScreenshot()
+    {
+        var p = L.Player;
+        if (_shooting || p.Path is not { } path || !p.HasVideo) return;
+        _shooting = true;
+        var at = p.Position;
+        var title = string.IsNullOrWhiteSpace(_title.Text) ? Path.GetFileNameWithoutExtension(path) : _title.Text;
+        var folder = Screenshots.Folder(L.Settings.String(K.ScreenshotFolder));
+        L.Play(UiSound.Select);
+        _ = Task.Run(() => FrameGrab.At(path, at)).ContinueWith(t => Dispatcher.UIThread.Post(() =>
+        {
+            _shooting = false;
+            if (!t.IsCompletedSuccessfully || t.Result is not { } shot) { L.Window.Toast("Couldn't take a screenshot of this video.", "warning"); return; }
+            try
+            {
+                var file = Screenshots.PathFor(folder, title, at);
+                using (var bitmap = ImageCache.FromBgra(shot.Bgra, shot.Width, shot.Height)) bitmap.Save(file);
+                L.Rumble(0.25f, 50);
+                L.Window.Toast($"Screenshot saved: {Path.GetFileName(file)} ({Path.GetFileName(folder.TrimEnd('\\'))})", "image", 4);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                L.Window.Toast("Couldn't save the screenshot: " + e.Message, "warning", 5);
+            }
+        }));
+    }
+
     private void Options()
     {
         var p = L.Player;
@@ -733,6 +766,7 @@ public sealed class PlayerScreen : Screen
         {
             new(p.IsPlaying ? "Pause" : "Play", p.IsPlaying ? "pause" : "play", () => p.TogglePause()),
             new("Audio, subtitles and picture", "subtitles", OpenTracks),
+            new("Take a screenshot", "image", TakeScreenshot, Path.GetFileName(Screenshots.Folder(L.Settings.String(K.ScreenshotFolder)).TrimEnd('\\'))),
         };
         if (p.Chapters.Count > 1)
             items.Add(new MenuEntry("Chapters", "chapters", () => L.Window.Menu("Chapters",

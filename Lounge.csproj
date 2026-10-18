@@ -8,7 +8,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>Lounge</RootNamespace>
     <AssemblyName>Lounge</AssemblyName>
-    <Version>1.0.19</Version>
+    <Version>1.0.20</Version>
     <Company>Fezcode</Company>
     <Product>Lounge</Product>
     <DebugType>embedded</DebugType>

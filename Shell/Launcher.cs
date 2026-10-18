@@ -18,6 +18,14 @@ public static class Launcher
             L.Window.Push(new WebScreen(tile));
             return;
         }
+        if (tile.Kind == TileKind.Builtin)
+        {
+            // Lounge's own games play inside Lounge: nothing to hand over.
+            if (tile.Target == "starfall") L.Window.Push(new StarfallScreen());
+            else if (tile.Target == "hellgate") L.Window.Push(new HellgateScreen());
+            else L.Window.Toast($"{tile.Name} isn't part of this version of Lounge.", "warning");
+            return;
+        }
         try
         {
             int? pid = null;

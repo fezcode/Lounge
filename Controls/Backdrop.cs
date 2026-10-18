@@ -218,6 +218,17 @@ public sealed class Backdrop : Grid
                 };
                 break;
             }
+            case BackdropStyle.Pixel:
+            {
+                // Real pixels: a small picture scaled up with no smoothing, so every pixel is a block.
+                var pixels = new PixelScene(a, b, c);
+                var image = new Image { Source = pixels.Bitmap, Stretch = Stretch.UniformToFill, IsHitTestVisible = false };
+                RenderOptions.SetBitmapInterpolationMode(image, Avalonia.Media.Imaging.BitmapInterpolationMode.None);
+                _scene.Children.Add(image);
+                _scene.Children.Add(new Border { Background = PixelScene.Scanlines(), Opacity = 0.45, IsHitTestVisible = false });
+                _animate = t => { pixels.Draw(t); image.InvalidateVisual(); };
+                break;
+            }
         }
 
         _scrim.Background = new LinearGradientBrush

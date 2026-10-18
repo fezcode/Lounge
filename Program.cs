@@ -15,6 +15,7 @@ internal static class Program
     public static int Main(string[] args)
     {
         Args = args;
+        ClearInheritedWebViewSettings();
         // A GUI exe has no console; borrow the terminal's when asked for text.
         if (args.Any(a => a is "-v" or "--version" or "-h" or "--help" or "--selftest")) AttachConsole(-1);
         App.StartArgs = args;
@@ -43,6 +44,18 @@ internal static class Program
 
     [System.Runtime.InteropServices.DllImport("kernel32.dll")]
     private static extern bool AttachConsole(int pid);
+
+    /// <summary>WebView2 lets these variables override what an app asks for. Setup (a Wails
+    /// app) sets them, empty, in its own process, and "Run Lounge after install" passed them
+    /// on: the empty user data folder sent Lounge's web pages to a fresh profile beside the
+    /// exe (signed out of every site) and the empty arguments dropped Lounge's own. Lounge
+    /// never wants them, so they go before anything starts (the agent then inherits a clean
+    /// environment too).</summary>
+    private static void ClearInheritedWebViewSettings()
+    {
+        foreach (var name in new[] { "WEBVIEW2_USER_DATA_FOLDER", "WEBVIEW2_BROWSER_EXECUTABLE_FOLDER", "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "WEBVIEW2_RELEASE_CHANNEL_PREFERENCE", "WEBVIEW2_PIPE_FOR_SCRIPT_DEBUGGER" })
+            Environment.SetEnvironmentVariable(name, null);
+    }
 
     public static AppBuilder BuildAvaloniaApp() =>
         AppBuilder.Configure<App>()

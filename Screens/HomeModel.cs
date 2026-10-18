@@ -132,7 +132,7 @@ public static class HomeModel
         return list;
     }
 
-    public static HomeEntry TileEntry(Tile t) => new(t.Name, t.IsWeb ? Host(t.Target) : t.Kind == TileKind.Cogas ? "Big Picture" : null,
+    public static HomeEntry TileEntry(Tile t) => new(t.Name, t.IsWeb ? Host(t.Target) : t.Kind == TileKind.Cogas ? "Big Picture" : t.Kind == TileKind.Builtin ? "Built into Lounge" : null,
         TileArt(t), t.IsWeb ? "web" : "gamepad", t.Color, () => Launcher.Launch(t),
         () => TileMenu(t), Tile: t);
 
@@ -198,9 +198,12 @@ public static class HomeModel
         try
         {
             var uri = new Uri($"avares://{typeof(HomeModel).Assembly.GetName().Name}/Assets/Logos/{name}.png");
-            using var src = Avalonia.Platform.AssetLoader.Open(uri);
-            using var dst = File.Create(file);
-            src.CopyTo(dst);
+            // Copied aside and moved into place: a half-copied logo must never be decoded.
+            var part = file + ".part";
+            using (var src = Avalonia.Platform.AssetLoader.Open(uri))
+            using (var dst = File.Create(part))
+                src.CopyTo(dst);
+            File.Move(part, file, overwrite: true);
             return file;
         }
         catch (Exception e) when (e is FileNotFoundException or IOException or UnauthorizedAccessException) { return null; }

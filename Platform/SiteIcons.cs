@@ -42,8 +42,14 @@ public static partial class SiteIcons
         {
             try
             {
-                var bytes = await Fetch(new Uri(site.GetLeftPart(UriPartial.Authority) + "/"));
-                await File.WriteAllBytesAsync(file, bytes ?? []);
+                var (reached, bytes) = await Fetch(new Uri(site.GetLeftPart(UriPartial.Authority) + "/"));
+                // A site that couldn't be reached is asked again next time; only one that
+                // answered without a usable icon is remembered as having none (empty file).
+                if (!reached) return;
+                // Written aside and moved into place, so a tile never decodes a half-written icon.
+                var part = file + ".part";
+                await File.WriteAllBytesAsync(part, bytes ?? []);
+                File.Move(part, file, overwrite: true);
                 if (bytes is not null) Updated?.Invoke();
             }
             catch (Exception e) when (e is HttpRequestException or TaskCanceledException or IOException or UriFormatException) { }
@@ -52,11 +58,16 @@ public static partial class SiteIcons
         return null;
     }
 
-    private static async Task<byte[]?> Fetch(Uri home)
+    /// <summary>The site's best icon. <c>Reached</c> is false when the site didn't answer at
+    /// all (offline, a timeout), so the attempt isn't remembered as "no icon".</summary>
+    private static async Task<(bool Reached, byte[]? Icon)> Fetch(Uri home)
     {
         var candidates = new List<(Uri Url, int Size)>();
         string html = "";
-        try { html = await Http.GetStringAsync(home); } catch (HttpRequestException) { }
+        var reached = false;
+        try { html = await Http.GetStringAsync(home); reached = true; }
+        catch (HttpRequestException e) { reached = e.StatusCode is not null; }   // an HTTP error is still an answer
+        catch (TaskCanceledException) { }
 
         foreach (Match link in LinkTag().Matches(html))
         {
@@ -78,12 +89,14 @@ public static partial class SiteIcons
             try
             {
                 var bytes = await Http.GetByteArrayAsync(url);
+                reached = true;
                 // Small icons look smudgy on a tile: below 96 px the monogram is better.
-                if (IsRasterImage(bytes) && (PixelSize(bytes) is not { } px || px >= 96)) return bytes;
+                if (IsRasterImage(bytes) && (PixelSize(bytes) is not { } px || px >= 96)) return (true, bytes);
             }
-            catch (HttpRequestException) { }
+            catch (HttpRequestException e) { reached |= e.StatusCode is not null; }
+            catch (TaskCanceledException) { }
         }
-        return null;
+        return (reached, null);
     }
 
     private static async Task<IEnumerable<(Uri, int)>> FromManifest(Uri manifest)

@@ -253,7 +253,7 @@ public sealed class SettingsPanel : Grid, IInputLayer
 
     private void PickPath(SettingDescriptor d)
     {
-        var folder = d.Key == K.AmbientFolder;
+        var folder = d.Key is K.AmbientFolder or K.ScreenshotFolder;
         var current = L.Settings.String(d.Key);
         L.Window.Menu(d.Label,
         [

@@ -36,6 +36,9 @@ public sealed class HomeScreen : Screen
 
     public override void OnClosed() => LibraryService.Updated -= OnLibraryUpdated;
 
+    // Nothing blinks behind another screen (coming back rebuilds the view and its timer).
+    public override void OnHidden() => _blink?.Stop();
+
     private bool _shownOnce;
 
     public override void OnShown()
@@ -55,6 +58,8 @@ public sealed class HomeScreen : Screen
     {
         Children.Clear();
         _entries.Clear();
+        _blink?.Stop();
+        _blink = null;
         _previewId = null;
         _kodiShown = null;
         _programmeShown = null;
@@ -66,6 +71,7 @@ public sealed class HomeScreen : Screen
             HomeLayout.IconRow => ConsoleOne(),
             HomeLayout.TileGrid => Series(),
             HomeLayout.Programme => Programme(),
+            HomeLayout.Cabinet => Cabinet(),
             _ => Aurora(),
         };
         Children.Add(content);
@@ -543,7 +549,7 @@ public sealed class HomeScreen : Screen
                 underlineWidth.To(f ? Math.Max(120, title.Bounds.Width * 0.55) : 0);
                 if (!f) return;
                 _contentDebounce?.Dispose();
-                _contentDebounce = DispatcherTimer.RunOnce(() => FillProgramme(featureHost, featureFocus, d, sid is null ? null : sections.GetValueOrDefault(sid), sections.GetValueOrDefault("jump")), TimeSpan.FromMilliseconds(130));
+                _contentDebounce = DispatcherTimer.RunOnce(() => FillLineup(featureHost, featureFocus, d, sid is null ? null : sections.GetValueOrDefault(sid), sections.GetValueOrDefault("jump"), ProgrammeStyle), TimeSpan.FromMilliseconds(130));
             };
             card.Item.Activate = d.Open;
             _entries[card.Item] = d;
@@ -553,14 +559,40 @@ public sealed class HomeScreen : Screen
         grid.Children.Add(index.Col(0).Row(1));
         grid.Children.Add(featureHost.Col(1).Row(1));
         grid.Children.Add(HintBar().Margin(96, 0, 0, 40).Col(0, 2).Row(2));
-        FillProgramme(featureHost, featureFocus, HomeModel.Destinations()[0], sections.GetValueOrDefault("videos"), sections.GetValueOrDefault("jump"));
+        FillLineup(featureHost, featureFocus, HomeModel.Destinations()[0], sections.GetValueOrDefault("videos"), sections.GetValueOrDefault("jump"), ProgrammeStyle);
         return (grid, root);
     }
 
     private string? _programmeShown;
 
+    /// <summary>How a line-up beside a destination list speaks: Screening Room's programme
+    /// labels under a fine rule, or Arcade's banners.</summary>
+    private sealed record LineupStyle(
+        Func<string, Control> Header,
+        Func<string, (string Label, double W, double H)> Shelf,
+        string Continue,
+        Func<HomeEntry, Control> Empty);
+
+    private static readonly LineupStyle ProgrammeStyle = new(
+        label => Ui.H(16,
+            Ui.Text(label.ToUpperInvariant(), T.Caption, T.Accent, FontWeight.Medium, letterSpacing: 4),
+            new Border { Height = 1, Width = 220, Background = T.Line, VerticalAlignment = VerticalAlignment.Center }),
+        id => id switch
+        {
+            "videos" => ("Now showing", 168.0, 252.0),
+            "music" => ("On the record", 230.0, 230.0),
+            "apps" => ("The arcade", 230.0, 230.0),
+            "web" => ("On air", 360.0, 203.0),
+            _ => ("", 230.0, 230.0),
+        },
+        "Continue",
+        dest => Ui.V(18,
+            Ui.Text("FEATURE", T.Caption, T.Accent, FontWeight.Medium, letterSpacing: 4),
+            Ui.Display(Ui.Text(dest.Subtitle ?? dest.Title, 64, T.Text, wrap: TextWrapping.Wrap), italic: true),
+            Ui.Muted("Press A to open", T.Body)));
+
     /// <summary>The line-up beside the index: what this destination is showing.</summary>
-    private void FillProgramme(ContentControl host, FocusList focus, HomeEntry dest, HomeSection? section, HomeSection? jump)
+    private void FillLineup(ContentControl host, FocusList focus, HomeEntry dest, HomeSection? section, HomeSection? jump, LineupStyle style)
     {
         if (_programmeShown == dest.Title && host.Content is not null) return;
         _programmeShown = dest.Title;
@@ -578,34 +610,21 @@ public sealed class HomeScreen : Screen
                 panel.Children.Add(Captioned(card, e, w));
                 list.Add(card.Item);
             }
-            var header = Ui.H(16,
-                Ui.Text(label.ToUpperInvariant(), T.Caption, T.Accent, FontWeight.Medium, letterSpacing: 4),
-                new Border { Height = 1, Width = 220, Background = T.Line, VerticalAlignment = VerticalAlignment.Center });
-            stack.Children.Add(Ui.V(0, header,
+            stack.Children.Add(Ui.V(0, style.Header(label),
                 new ScrollViewer { Content = panel, HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, ClipToBounds = false }));
             focus.Add(list);
         }
 
-        if (dest.Title == "Videos" && jump is not null) AddRow(jump, "Continue", 320, 180);
+        if (dest.Title == "Videos" && jump is not null) AddRow(jump, style.Continue, 320, 180);
         if (section is not null)
         {
-            var (label, w, h) = section.Id switch
-            {
-                "videos" => ("Now showing", 168.0, 252.0),
-                "music" => ("On the record", 230.0, 230.0),
-                "apps" => ("The arcade", 230.0, 230.0),
-                "web" => ("On air", 360.0, 203.0),
-                _ => (section.Title, 230.0, 230.0),
-            };
-            AddRow(section, label, w, h);
+            var (label, w, h) = style.Shelf(section.Id);
+            AddRow(section, label.Length > 0 ? label : section.Title, w, h);
         }
         else
         {
             // Nothing to line up: a title card for the destination instead.
-            var card = Ui.V(18,
-                Ui.Text("FEATURE", T.Caption, T.Accent, FontWeight.Medium, letterSpacing: 4),
-                Ui.Display(Ui.Text(dest.Subtitle ?? dest.Title, 64, T.Text, wrap: TextWrapping.Wrap), italic: true),
-                Ui.Muted("Press A to open", T.Body));
+            var card = style.Empty(dest);
             card.MaxWidth = 860;
             card.Margin = new Thickness(0, 120, 96, 0);
             stack.Children.Add(card);
@@ -613,6 +632,101 @@ public sealed class HomeScreen : Screen
         host.Content = new ScrollViewer { Content = stack, VerticalScrollBarVisibility = ScrollBarVisibility.Hidden, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         RefreshFocus();
     }
+
+    // ------------------------------------------------------------------ Arcade (cabinet)
+
+    private DispatcherTimer? _blink;
+
+    private static readonly LineupStyle ArcadeStyle = new(
+        label => Ui.H(14, PixelArrow(18, T.Danger), Ui.Display(Ui.Text(label.ToUpperInvariant(), 22, T.Accent)),
+            new Border { Height = 4, Width = 160, Background = T.Line, VerticalAlignment = VerticalAlignment.Center }),
+        id => id switch
+        {
+            "videos" => ("Now playing", 168.0, 252.0),
+            "music" => ("Sound test", 230.0, 230.0),
+            "apps" => ("Select game", 230.0, 230.0),
+            "web" => ("Bonus stage", 360.0, 203.0),
+            _ => ("", 230.0, 230.0),
+        },
+        "Continue?",
+        dest => Ui.V(22,
+            Ui.Display(Ui.Text("STAGE SELECT", 22, T.Danger)),
+            Ui.Display(Ui.Text((dest.Subtitle ?? dest.Title).ToUpperInvariant(), 36, T.Text, wrap: TextWrapping.Wrap)),
+            Ui.Muted("Press A to enter", T.Body)));
+
+    /// <summary>An arcade cabinet's select screen: the name as a pixel marquee with a hard
+    /// drop shadow, the destinations as an uppercase menu where a blinking pixel arrow marks
+    /// the choice, the chosen one's line-up beside it, and a blinking "press start".</summary>
+    private (Control, FocusNode) Cabinet()
+    {
+        var grid = Ui.Grid("640,*", "Auto,*,Auto");
+        var root = new FocusList(horizontal: true);
+        var sections = HomeModel.Sections().ToDictionary(s => s.Id);
+
+        var marquee = new Grid();
+        marquee.Children.Add(Ui.Display(Ui.Text("LOUNGE", 72, T.Danger)).Margin(7, 7, 0, 0));
+        marquee.Children.Add(Ui.Display(Ui.Text("LOUNGE", 72, T.Accent)));
+        var subtitle = Ui.Display(Ui.Text("1UP  *  SELECT YOUR STAGE", 20, T.TextMuted));
+        grid.Children.Add(Ui.V(18, marquee, subtitle).Margin(96, 56, 96, 0).Col(0, 2).Row(0));
+
+        var menuFocus = root.Add(new FocusList(horizontal: false, rememberIndex: true));
+        var menu = new StackPanel { Spacing = 6, Margin = new Thickness(96, 44, 0, 0) };
+        var lineupHost = new ContentControl();
+        var lineupFocus = root.Add(new FocusList(horizontal: false, rememberIndex: false));
+        Control? activeCursor = null;
+        foreach (var d in HomeModel.Destinations())
+        {
+            var sid = d.Title switch { "Videos" => "videos", "Music" => "music", "Apps & Games" => "apps", "Web" => "web", _ => null };
+            var cursor = PixelArrow(30, T.Accent);
+            cursor.Opacity = 0;
+            var title = Ui.Display(Ui.Text(d.Title.ToUpperInvariant(), 34, T.TextFaint));
+            title.VerticalAlignment = VerticalAlignment.Center;
+            var card = new Card(Ui.H(22, cursor, title).Margin(0, 10, 30, 10), 0)
+            {
+                FocusScale = 1.0, ShowRing = false, ShowGlow = false, HorizontalAlignment = HorizontalAlignment.Left,
+            };
+            card.Body.Background = Brushes.Transparent;
+            card.Focused += f =>
+            {
+                title.Foreground = f ? T.Accent : T.TextFaint;
+                cursor.Opacity = f ? 1 : 0;
+                if (!f) return;
+                activeCursor = cursor;
+                _contentDebounce?.Dispose();
+                _contentDebounce = DispatcherTimer.RunOnce(() => FillLineup(lineupHost, lineupFocus, d, sid is null ? null : sections.GetValueOrDefault(sid), sections.GetValueOrDefault("jump"), ArcadeStyle), TimeSpan.FromMilliseconds(130));
+            };
+            card.Item.Activate = d.Open;
+            _entries[card.Item] = d;
+            menu.Children.Add(card);
+            menuFocus.Add(card.Item);
+        }
+
+        var pressStart = Ui.H(14, Ui.Display(Ui.Text("PRESS", 22, T.Text)), Hints.Glyph(PadButton.A, 36), Ui.Display(Ui.Text("TO START", 22, T.Text)));
+        grid.Children.Add(menu.Col(0).Row(1));
+        grid.Children.Add(lineupHost.Col(1).Row(1));
+        grid.Children.Add(Ui.V(22, pressStart, HintBar()).Margin(96, 0, 0, 40).Col(0, 2).Row(2));
+        FillLineup(lineupHost, lineupFocus, HomeModel.Destinations()[0], sections.GetValueOrDefault("videos"), sections.GetValueOrDefault("jump"), ArcadeStyle);
+
+        // Arcade blink: the cursor and "press start" flash on a steady beat.
+        if (Motion.Enabled)
+        {
+            var on = true;
+            _blink = new DispatcherTimer(TimeSpan.FromMilliseconds(530), DispatcherPriority.Background, (_, _) =>
+            {
+                on = !on;
+                pressStart.Opacity = on ? 1 : 0.15;
+                if (activeCursor is not null) activeCursor.Opacity = on ? 1 : 0.35;
+            });
+        }
+        return (grid, root);
+    }
+
+    /// <summary>A right-pointing arrow drawn in whole pixels, the cursor of every arcade menu.</summary>
+    private static Control PixelArrow(double height, IBrush brush) => new Viewbox
+    {
+        Width = height * 5 / 8, Height = height, VerticalAlignment = VerticalAlignment.Center,
+        Child = new Avalonia.Controls.Shapes.Path { Data = Geometry.Parse("M0,0 H2 V1 H3 V2 H4 V3 H5 V5 H4 V6 H3 V7 H2 V8 H0 Z"), Fill = brush, Width = 5, Height = 8 },
+    };
 
     // ------------------------------------------------------------------ input
 

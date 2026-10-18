@@ -176,6 +176,19 @@ public class MediaTests
     }
 
     [Fact]
+    public void Screenshot_grabs_the_exact_frame_at_full_resolution()
+    {
+        if (!Ready(out var why)) { Assert.Fail(why); return; }
+        var shot = FrameGrab.At(Clips.Instance.Video, 5.52);
+        Assert.NotNull(shot);
+        Assert.Equal(640, shot!.Width);   // full size, not a thumbnail
+        Assert.Equal(360, shot.Height);
+        Assert.InRange(shot.Pts, 5.52 - 0.041, 5.52 + 0.041);   // that frame, not the keyframe before it
+        Assert.Equal(640 * 360 * 4, shot.Bgra.Length);
+        Assert.Contains(shot.Bgra, b => b > 0);
+    }
+
+    [Fact]
     public void Scrub_shows_keyframes_then_settles_exactly()
     {
         if (!Ready(out var why)) { Assert.Fail(why); return; }

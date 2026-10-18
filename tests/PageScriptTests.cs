@@ -41,6 +41,18 @@ public class PageScriptTests
         Assert.DoesNotContain("addEventListener(\"click\"", fn);   // stops before the popup's own code
     }
 
+    [Fact]
+    public void Screenshots_are_named_by_title_and_time_and_never_overwrite()
+    {
+        var taken = new HashSet<string>();
+        var first = Lounge.Core.Media.Screenshots.PathFor(@"C:\Shots", "Dune: Part Two", 3725.6, taken.Contains);
+        Assert.Equal(@"C:\Shots\Dune  Part Two 1-02-05.png", first);
+        taken.Add(first);
+        Assert.Equal(@"C:\Shots\Dune  Part Two 1-02-05 (2).png", Lounge.Core.Media.Screenshots.PathFor(@"C:\Shots", "Dune: Part Two", 3725.9, taken.Contains));
+        Assert.Equal(@"C:\Shots\Screenshot 00-07.png", Lounge.Core.Media.Screenshots.PathFor(@"C:\Shots", "  ", 7.2, _ => false));
+        Assert.Equal(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), Lounge.Core.Media.Screenshots.Folder(@"C:\does\not\exist"));
+    }
+
     [Theory]
     [InlineData(0, 0, 0, "AllOff couldn't reach this page.")]
     [InlineData(0, 0, 2, "Nothing was switched on.")]

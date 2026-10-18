@@ -17,11 +17,16 @@ public enum HomeLayout
     /// <summary>Screening Room: a printed programme. Destinations are a numbered index in
     /// large serif type; the focused one's line-up sits beside it.</summary>
     Programme,
+    /// <summary>Arcade: a cabinet's game-select screen. A pixel marquee, the destinations as
+    /// an uppercase menu with a blinking cursor, the focused one's line-up beside it.</summary>
+    Cabinet,
 }
 
-/// <summary>A procedural default backdrop, so themes need no shipped wallpapers.</summary>
-/// <summary>Projector: a warm cone of light with flicker, film grain and a vignette.</summary>
-public enum BackdropStyle { Aurora, Sunset, Fanart, Waves, Glow, Projector }
+/// <summary>A procedural default backdrop, so themes need no shipped wallpapers. Projector:
+/// a warm cone of light with flicker, film grain and a vignette. Pixel: a low-resolution
+/// pixel-art scene (dithered sky, stars, a striped sun, parallax mountains, a scrolling grid)
+/// scaled up without smoothing, under CRT scanlines.</summary>
+public enum BackdropStyle { Aurora, Sunset, Fanart, Waves, Glow, Projector, Pixel }
 
 /// <summary>Everything a theme decides. Colours are #RRGGBB or #AARRGGBB strings so Core
 /// stays free of Avalonia; the Shell turns them into brushes.</summary>
@@ -156,7 +161,24 @@ public static class Themes
         AmbientPreset = "screening", SoundSet = "screening",
     };
 
-    public static readonly IReadOnlyList<ThemeDefinition> All = [Aurora, LivingRoom, Kodi, ConsoleOne, Series, ScreeningRoom];
+    /// <summary>An arcade cabinet: pixel type, a pixel-art sunset grid, arcade yellow on deep
+    /// purple, square corners, snappy motion and chiptune sounds.</summary>
+    public static readonly ThemeDefinition Arcade = new()
+    {
+        Id = "arcade", Name = "Arcade", Layout = HomeLayout.Cabinet, Backdrop = BackdropStyle.Pixel,
+        Bg0 = "#0B0420", Bg1 = "#05020F",
+        BackdropA = "#1A0B3D", BackdropB = "#FF2A6D", BackdropC = "#05D9E8",
+        Surface = "#2EFFFFFF", SurfaceStrong = "#F2140A2E", Line = "#6605D9E8",
+        Text = "#FFFFFF", TextMuted = "#CCD7DCFF", TextFaint = "#808C93C8",
+        Accent = "#FFD319", OnAccent = "#1A0B3D", Focus = "#FFD319",
+        Danger = "#FF2A6D", Success = "#39FF14",
+        Radius = 0, RadiusLarge = 0, FocusScale = 1.04, SpringStiffness = 900, SpringDamping = 42,
+        UppercaseHeaders = true, HeaderLetterSpacing = 1, TitleWeight = 400,
+        BodyFont = "Pixelify Sans", DisplayFont = "Press Start 2P", ArtTone = "#3A1F7A",
+        AmbientPreset = "arcade", SoundSet = "arcade",
+    };
+
+    public static readonly IReadOnlyList<ThemeDefinition> All = [Aurora, LivingRoom, Kodi, ConsoleOne, Series, ScreeningRoom, Arcade];
 
     public static ThemeDefinition Get(string id) => All.FirstOrDefault(t => t.Id == id) ?? Aurora;
 }

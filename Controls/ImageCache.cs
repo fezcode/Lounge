@@ -131,14 +131,18 @@ public static class ImageCache
             border.Child = null;
             return border;
         }
-        _ = LoadAsync(path, decode).ContinueWith(t =>
+        void Show(Bitmap bmp) => Dispatcher.UIThread.Post(() =>
         {
-            if (t.Result is { } bmp)
-                Dispatcher.UIThread.Post(() =>
-                {
-                    border.Background = new ImageBrush(bmp) { Stretch = stretch };
-                    border.Child = null;
-                });
+            border.Background = new ImageBrush(bmp) { Stretch = stretch };
+            border.Child = null;
+        });
+        _ = LoadAsync(path, decode).ContinueWith(async t =>
+        {
+            if (t.Result is { } bmp) { Show(bmp); return; }
+            // A file still being written (a logo or icon arriving) or briefly locked fails to
+            // decode; one more try a moment later instead of leaving the tile blank.
+            await Task.Delay(1200);
+            if (await LoadAsync(path, decode) is { } again) Show(again);
         });
         return border;
     }

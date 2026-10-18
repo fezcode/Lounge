@@ -15,6 +15,8 @@ public enum TileKind
     Cogas,
     /// <summary>A web page in the embedded browser; Target is the URL.</summary>
     Web,
+    /// <summary>A game built into Lounge; Target names it ("starfall").</summary>
+    Builtin,
 }
 
 public enum ReturnBehaviour { Default, Switch, Close, Ask }
@@ -72,7 +74,7 @@ public sealed class TileStore
 
     /// <summary>One-time changes to saved tiles, recorded beside tiles.json so each runs
     /// once and a later choice by the user (removing a tile, switching it back) sticks.</summary>
-    private static readonly string[] Migrations = ["logos", "prime-inside", "hbomax"];
+    private static readonly string[] Migrations = ["logos", "prime-inside", "hbomax", "starfall", "hellgate"];
 
     private string MigrationsPath => Path.ChangeExtension(_path, ".migrations");
 
@@ -125,6 +127,18 @@ public sealed class TileStore
                 var at = prime >= 0 ? prime + 1 : tiles.FindLastIndex(t => t.IsWeb) + 1;
                 tiles.Insert(at > 0 ? at : tiles.Count, Defaults().Single(d => d.Id == "hbomax"));
             }
+            // 1.0.20: Starfall, Lounge's own shooter, joins the games beside Steam.
+            if (done.Add("starfall") && !tiles.Any(t => t.Id == "starfall"))
+            {
+                var steam = tiles.FindIndex(t => t.Id == "steam");
+                tiles.Insert(steam >= 0 ? steam + 1 : Math.Min(2, tiles.Count), Defaults().Single(d => d.Id == "starfall"));
+            }
+            // 1.0.20: Hellgate, Lounge's own Doom-style shooter, beside Starfall.
+            if (done.Add("hellgate") && !tiles.Any(t => t.Id == "hellgate"))
+            {
+                var after = tiles.FindIndex(t => t.Id == "starfall");
+                tiles.Insert(after >= 0 ? after + 1 : Math.Min(2, tiles.Count), Defaults().Single(d => d.Id == "hellgate"));
+            }
             if (done.Count != before) { WriteMigrations(done); migrated = true; }
             return tiles;
         }
@@ -160,6 +174,8 @@ public sealed class TileStore
     [
         new() { Id = "cogas", Kind = TileKind.Cogas, Name = "Cogas", Color = "#6C4BFF", IsGame = true },
         new() { Id = "steam", Kind = TileKind.Protocol, Name = "Steam Big Picture", Target = "steam://open/bigpicture", Color = "#1B2838", IsGame = true },
+        new() { Id = "starfall", Kind = TileKind.Builtin, Name = "Starfall", Target = "starfall", Color = "#7A1FA2", IsGame = true, Logo = "starfall" },
+        new() { Id = "hellgate", Kind = TileKind.Builtin, Name = "Hellgate", Target = "hellgate", Color = "#8A1A10", IsGame = true, Logo = "hellgate" },
         new() { Id = "youtube", Kind = TileKind.Web, Name = "YouTube", Target = "https://www.youtube.com/tv", UserAgent = TvUserAgent, Color = "#FF0033" },
         new() { Id = "netflix", Kind = TileKind.Web, Name = "Netflix", Target = "https://www.netflix.com/browse", Color = "#E50914", AllowMouse = true, Logo = "netflix" },
         new() { Id = "disney", Kind = TileKind.Web, Name = "Disney+", Target = "https://www.disneyplus.com/", Color = "#113CCF", AllowMouse = true },
