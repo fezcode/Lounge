@@ -75,4 +75,16 @@ public class WebTextTests
         Assert.Equal(48, WebText.PixelSize(ico));
         Assert.False(WebText.IsRasterImage(System.Text.Encoding.UTF8.GetBytes("<!doctype html><svg></svg>")));
     }
+
+    [Theory]
+    [InlineData("https://example.com/a?b=1", "https://example.com/a?b=1")]
+    [InlineData("bbc.co.uk", "https://bbc.co.uk/")]
+    [InlineData("  github.com/fezcode  ", "https://github.com/fezcode")]
+    [InlineData("localhost:8080", "https://localhost:8080/")]
+    [InlineData("weather tomorrow", "https://www.google.com/search?q=weather%20tomorrow")]
+    [InlineData("node.js tutorial", "https://www.google.com/search?q=node.js%20tutorial")]
+    [InlineData("e.g.", "https://www.google.com/search?q=e.g.")]
+    [InlineData("", "https://www.google.com/")]
+    public void Browser_opens_addresses_and_searches_for_everything_else(string typed, string expected) =>
+        Assert.Equal(expected, WebText.AddressOrSearch(typed));
 }

@@ -35,6 +35,19 @@ public static partial class WebText
             .Where(p => p.Length > 0 && !p.Contains("WebView", StringComparison.OrdinalIgnoreCase))
             .Select(p => identity == "chrome" ? p.Replace("\"Microsoft Edge\"", "\"Google Chrome\"") : p));
 
+    /// <summary>What the browser opens for what was typed: an address as given ("https://..."),
+    /// a bare one made secure ("bbc.co.uk", "localhost:8080"), anything else searched for.</summary>
+    public static string AddressOrSearch(string typed)
+    {
+        var t = typed.Trim();
+        if (t.Length == 0) return "https://www.google.com/";
+        if (Uri.TryCreate(t, UriKind.Absolute, out var u) && u.Scheme is "http" or "https") return u.AbsoluteUri;
+        var looksLikeHost = !t.Contains(' ') && (t.Contains('.') || t.StartsWith("localhost", StringComparison.OrdinalIgnoreCase))
+                            && Uri.TryCreate("https://" + t, UriKind.Absolute, out var bare) && bare.Host.Length > 0
+                            && !bare.Host.StartsWith('.') && !bare.Host.EndsWith('.');
+        return looksLikeHost ? new Uri("https://" + t).AbsoluteUri : "https://www.google.com/search?q=" + Uri.EscapeDataString(t);
+    }
+
     /// <summary>The user-agent string as Chrome sends it: Edge's is Chrome's plus an "Edg/" token.</summary>
     public static string ChromeUserAgent(string edgeUserAgent) => EdgeToken().Replace(edgeUserAgent, "");
 

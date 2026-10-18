@@ -7,6 +7,7 @@ using Lounge.Controls;
 using Lounge.Core.Audio;
 using Lounge.Core.Focus;
 using Lounge.Core.Input;
+using Lounge.Core.Settings;
 
 namespace Lounge.Shell;
 
@@ -127,8 +128,10 @@ public sealed class ModalLayer : Grid, IInputLayer
         return layer;
     }
 
-    /// <summary>An options list sliding in from the right (View button menus).</summary>
-    public static ModalLayer Menu(string title, IReadOnlyList<MenuEntry> items, Action<int> done)
+    /// <summary>An options list sliding in from the right (View button menus). With
+    /// <paramref name="clock"/>, the time sits in its top-right corner (over a playing
+    /// video, where the status bar is hidden).</summary>
+    public static ModalLayer Menu(string title, IReadOnlyList<MenuEntry> items, Action<int> done, bool clock = false)
     {
         var list = new FocusList(horizontal: false, rememberIndex: true);
         var panel = new StackPanel { Spacing = 6, Margin = new Thickness(16, 8, 16, 24) };
@@ -159,7 +162,23 @@ public sealed class ModalLayer : Grid, IInputLayer
             HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
         };
         var grid = Ui.Grid("*", "Auto,*");
-        grid.Children.Add(Ui.Header(title, T.Title).Margin(36, 48, 36, 24).Row(0));
+        var header = Ui.Header(title, T.Title);
+        if (clock && (L.Settings?.Bool(K.ShowClock) ?? true))
+        {
+            header.TextTrimming = TextTrimming.CharacterEllipsis;
+            var time = Ui.Text("", T.Body, T.TextMuted, FontWeight.SemiBold);
+            void Tick() => time.Text = DateTime.Now.ToString(L.Settings?.Bool(K.Clock24h) ?? true ? "HH:mm" : "h:mm tt");
+            Tick();
+            // Normal priority: Background timers starve while a video is playing.
+            var timer = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Normal, (_, _) => Tick());
+            time.AttachedToVisualTree += (_, _) => timer.Start();
+            time.DetachedFromVisualTree += (_, _) => timer.Stop();
+            var top = Ui.Grid("*,Auto", "Auto");
+            top.Children.Add(header.Col(0).Align(HorizontalAlignment.Stretch, VerticalAlignment.Center));
+            top.Children.Add(time.Margin(24, 0, 0, 0).Col(1).Align(HorizontalAlignment.Right, VerticalAlignment.Center));
+            grid.Children.Add(top.Margin(36, 48, 36, 24).Row(0));
+        }
+        else grid.Children.Add(header.Margin(36, 48, 36, 24).Row(0));
         grid.Children.Add(scroll.Margin(12, 0, 12, 36).Row(1));
         var sheet = new Border
         {

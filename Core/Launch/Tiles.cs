@@ -15,7 +15,7 @@ public enum TileKind
     Cogas,
     /// <summary>A web page in the embedded browser; Target is the URL.</summary>
     Web,
-    /// <summary>A game built into Lounge; Target names it ("starfall").</summary>
+    /// <summary>Something built into Lounge; Target names it ("starfall", "browser").</summary>
     Builtin,
 }
 
@@ -44,6 +44,10 @@ public sealed class Tile
     public bool Pinned { get; set; }
 
     public bool IsWeb => Kind == TileKind.Web;
+    /// <summary>Lounge's own browser (an address or a search, optionally private).</summary>
+    public bool IsBrowser => Kind == TileKind.Builtin && Target == "browser";
+    /// <summary>Shown with the websites: web tiles and the browser.</summary>
+    public bool InWebRow => IsWeb || IsBrowser;
 
     public Tile Clone() => (Tile)MemberwiseClone();
 }
@@ -74,7 +78,7 @@ public sealed class TileStore
 
     /// <summary>One-time changes to saved tiles, recorded beside tiles.json so each runs
     /// once and a later choice by the user (removing a tile, switching it back) sticks.</summary>
-    private static readonly string[] Migrations = ["logos", "prime-inside", "hbomax", "starfall", "hellgate-gone"];
+    private static readonly string[] Migrations = ["logos", "prime-inside", "hbomax", "starfall", "hellgate-gone", "browser"];
 
     private string MigrationsPath => Path.ChangeExtension(_path, ".migrations");
 
@@ -93,8 +97,8 @@ public sealed class TileStore
 
     public IReadOnlyList<Tile> All => _tiles;
     /// <summary>Pinned tiles come first, then the rest in the user's order.</summary>
-    public IEnumerable<Tile> Web => _tiles.Where(t => t.IsWeb && !t.Hidden).OrderByDescending(t => t.Pinned);
-    public IEnumerable<Tile> Apps => _tiles.Where(t => !t.IsWeb && !t.Hidden).OrderByDescending(t => t.Pinned);
+    public IEnumerable<Tile> Web => _tiles.Where(t => t.InWebRow && !t.Hidden).OrderByDescending(t => t.Pinned);
+    public IEnumerable<Tile> Apps => _tiles.Where(t => !t.InWebRow && !t.Hidden).OrderByDescending(t => t.Pinned);
 
     public void SetPinned(string id, bool pinned)
     {
@@ -135,6 +139,9 @@ public sealed class TileStore
             }
             // 1.0.21: Hellgate (1.0.20's Doom-style game) is gone; so is its tile.
             if (done.Add("hellgate-gone")) tiles.RemoveAll(t => t.Kind == TileKind.Builtin && t.Target == "hellgate");
+            // 1.0.22: Lounge's browser (with private browsing) joins the end of the websites.
+            if (done.Add("browser") && !tiles.Any(t => t.IsBrowser))
+                tiles.Insert(tiles.FindLastIndex(t => t.IsWeb) + 1, Defaults().Single(d => d.Id == "browser"));
             if (done.Count != before) { WriteMigrations(done); migrated = true; }
             return tiles;
         }
@@ -177,6 +184,7 @@ public sealed class TileStore
         new() { Id = "prime", Kind = TileKind.Web, Name = "Prime Video", Target = "https://www.primevideo.com/", Color = "#1A98FF", AllowMouse = true, Logo = "prime" },
         new() { Id = "hbomax", Kind = TileKind.Web, Name = "HBO Max", Target = "https://play.hbomax.com/", Color = "#0047FF", AllowMouse = true, Logo = "hbomax" },
         new() { Id = "twitch", Kind = TileKind.Web, Name = "Twitch", Target = "https://www.twitch.tv/", Color = "#9146FF", AllowMouse = true },
+        new() { Id = "browser", Kind = TileKind.Builtin, Name = "Browser", Target = "browser", Color = "#2F6FEB" },
     ];
 
     public Tile? Find(string id) => _tiles.FirstOrDefault(t => t.Id == id);
@@ -197,7 +205,7 @@ public sealed class TileStore
     {
         var tile = Find(id);
         if (tile is null) return;
-        var group = _tiles.Where(t => t.IsWeb == tile.IsWeb && !t.Hidden && t.Pinned == tile.Pinned).ToList();
+        var group = _tiles.Where(t => t.InWebRow == tile.InWebRow && !t.Hidden && t.Pinned == tile.Pinned).ToList();
         var gi = group.IndexOf(tile);
         var target = gi + direction;
         if (target < 0 || target >= group.Count) return;

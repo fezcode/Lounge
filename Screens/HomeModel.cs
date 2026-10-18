@@ -132,8 +132,8 @@ public static class HomeModel
         return list;
     }
 
-    public static HomeEntry TileEntry(Tile t) => new(t.Name, t.IsWeb ? Host(t.Target) : t.Kind == TileKind.Cogas ? "Big Picture" : t.Kind == TileKind.Builtin ? "Built into Lounge" : null,
-        TileArt(t), t.IsWeb ? "web" : "gamepad", t.Color, () => Launcher.Launch(t),
+    public static HomeEntry TileEntry(Tile t) => new(t.Name, t.IsWeb ? Host(t.Target) : t.IsBrowser ? "Any address, or private" : t.Kind == TileKind.Cogas ? "Big Picture" : t.Kind == TileKind.Builtin ? "Built into Lounge" : null,
+        TileArt(t), t.InWebRow ? "web" : "gamepad", t.Color, () => Launcher.Launch(t),
         () => TileMenu(t), Tile: t);
 
     private static string Host(string url) => Uri.TryCreate(url, UriKind.Absolute, out var u) ? u.Host.Replace("www.", "") : url;
@@ -144,6 +144,7 @@ public static class HomeModel
         {
             new("Open", "play", () => Launcher.Launch(t)),
         };
+        if (t.IsBrowser) items.Add(new MenuEntry("Private browsing", "eye-off", () => Browser.Start(inPrivate: true)));
         if (t.IsWeb && !t.OpenExternally) items.Add(new MenuEntry("Open in full browser", "external", () => Launcher.Launch(t.Clone().Also(c => c.OpenExternally = true))));
         if (t.IsWeb && t.OpenExternally) items.Add(new MenuEntry("Open inside Lounge", "tv", () => Launcher.Launch(t.Clone().Also(c => c.OpenExternally = false))));
         items.Add(new MenuEntry("Edit", "pencil", () => L.Window.Push(new TileEditorScreen(t))));
@@ -262,6 +263,8 @@ public static class HomeModel
         var placeholder = Glyph(e, w, h, corner);
         if (e.Tile is not null)
         {
+            if (e.Art is null && e.Tile.IsBrowser)
+                return new Border { Width = w, Height = h, Background = Wash(e.Color), Child = Icons.Make("web", Math.Min(w, h) * 0.42, Brushes.White).Also(i => { i.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center; i.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center; }) };
             if (e.Art is null) return Ui.Monogram(e.Title, e.Color, Math.Min(w, h)).Also(b => { b.Width = w; b.Height = h; });
             if (e.Tile.IsWeb) return SiteCard(e, w, h);
             // App icons are small square pictures: centre them on their brand colour.

@@ -75,6 +75,7 @@ Check("Menu opens settings; the theme changes from the controller", ChangeTheme)
 Check("Screening Room's home animates without errors as focus moves", ScreeningHome);
         Check("Arcade's menu lights one arrow, on the chosen entry", ArcadeHome);
         Check("Tile logos stay on their tiles every time a screen is built", TileLogosSurviveRebuilds);
+        Check("The player's View menu shows the time at the top right", MenuClock);
             Check("The keyboard fits on screen in every layer", KeyboardFits);
             Check("While an app runs, only the return chord is heard", DormantChord);
             Check("When a launched app quits by itself, Lounge listens again", DormantRealProcess);
@@ -225,6 +226,26 @@ Check("On the Web screen, X opens a site's options", WebOptionsWithX);
     /// <summary>A tile's logo must show every time its tile is built, not just the first:
     /// 1.0.20 and earlier wiped a logo that was already in memory off its tile, so after any
     /// rebuild (coming back to a screen, an icon arriving) every tile went blank.</summary>
+    /// <summary>The player's View menu shows the time in its corner; other menus don't.</summary>
+    private static void MenuClock()
+    {
+        static IEnumerable<TextBlock> Texts(Control c) => c.GetVisualDescendants().OfType<TextBlock>();
+        var now = DateTime.Now.ToString(L.Settings.Bool(K.Clock24h) ? "HH:mm" : "h:mm tt");
+        var entries = new List<MenuEntry> { new("Pause", "pause", null) };
+        _w.Menu("Some video", entries, clock: true);
+        Pump(400);
+        var withClock = _w.GetVisualDescendants().OfType<ModalLayer>().Last();
+        Assert(Texts(withClock).Any(t => t.Text == now), $"no '{now}' in the View menu");
+        _w.CloseOverlays();
+        Pump(400);
+        _w.Menu("Plain", entries);
+        Pump(400);
+        var plain = _w.GetVisualDescendants().OfType<ModalLayer>().Last();
+        Assert(!Texts(plain).Any(t => t.Text == now), "a plain menu shows the time");
+        _w.CloseOverlays();
+        Pump(400);
+    }
+
     private static void TileLogosSurviveRebuilds()
     {
         var netflix = TileStore.Defaults().Single(t => t.Id == "netflix");

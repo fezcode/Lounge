@@ -319,13 +319,13 @@ public sealed class MainWindow : Window
     }
 
     /// <summary>An options menu. Each item runs its own action when chosen.</summary>
-    public void Menu(string title, IReadOnlyList<MenuEntry> items)
+    public void Menu(string title, IReadOnlyList<MenuEntry> items, bool clock = false)
     {
         L.Play(UiSound.Open);
         AddOverlay(ModalLayer.Menu(title, items, i =>
         {
             if (i >= 0 && i < items.Count) Dispatcher.UIThread.Post(() => items[i].Run?.Invoke());
-        }));
+        }, clock));
     }
 
     public void Keyboard(KeyboardRequest request, Action<string?> done)
@@ -642,6 +642,8 @@ public sealed class MainWindow : Window
         if (web >= 0 && web + 1 < args.Length)
             Push(new WebScreen(L.Tiles.All.FirstOrDefault(t => t.IsWeb && t.Target == args[web + 1])?.Clone()
                 ?? new Lounge.Core.Launch.Tile { Kind = Lounge.Core.Launch.TileKind.Web, Name = "Web check", Target = args[web + 1], AllowMouse = true }));
+        var browse = Array.IndexOf(args, "--browse");
+        if (browse >= 0 && browse + 1 < args.Length) Browser.Open(Lounge.Core.Web.WebText.AddressOrSearch(args[browse + 1]), inPrivate: args.Contains("--private"));
         if (args.Contains("--web-apps")) Push(new AppsScreen(web: true));
         if (args.Contains("--apps")) Push(new AppsScreen());
         var files = Array.IndexOf(args, "--files");

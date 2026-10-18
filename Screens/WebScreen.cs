@@ -24,8 +24,11 @@ public sealed class WebViewHost : NativeControlHost
     public event Action<CoreWebView2Controller>? Ready;
     public event Action<string>? Failed;
     private readonly Tile _tile;
+    private readonly bool _private;
 
-    public WebViewHost(Tile tile) => _tile = tile;
+    /// <param name="inPrivate">A private window: its own InPrivate profile, which keeps
+    /// no history, cookies, sign-ins or cache once the last private window closes.</param>
+    public WebViewHost(Tile tile, bool inPrivate = false) { _tile = tile; _private = inPrivate; }
 
     protected override IPlatformHandle CreateNativeControlCore(IPlatformHandle parent)
     {
@@ -45,7 +48,14 @@ public sealed class WebViewHost : NativeControlHost
             if (SelfCheck.Active && Environment.GetEnvironmentVariable("LOUNGE_WEB_ARGS") is { Length: > 0 } extra) args += " " + extra;
             var options = new CoreWebView2EnvironmentOptions(args) { AreBrowserExtensionsEnabled = WebExtensions.Enabled };
             var env = await CoreWebView2Environment.CreateAsync(null, AppPaths.WebView, options);
-            Controller = await env.CreateCoreWebView2ControllerAsync(_hwnd);
+            if (_private)
+            {
+                var opts = env.CreateCoreWebView2ControllerOptions();
+                opts.IsInPrivateModeEnabled = true;
+                opts.ProfileName = "Private";
+                Controller = await env.CreateCoreWebView2ControllerAsync(_hwnd, opts);
+            }
+            else Controller = await env.CreateCoreWebView2ControllerAsync(_hwnd);
             // Before the first page, so extensions that work inside pages see it load.
             try { await WebExtensions.Sync(Controller.CoreWebView2.Profile); }
             catch (Exception e) when (e is COMException or InvalidOperationException or ArgumentException) { Lounge.Shell.Log.Write("extensions: " + e.Message); }
@@ -152,6 +162,7 @@ public sealed class WebScreen : Screen
 {
     private readonly Tile _tile;
     private readonly WebViewHost _host;
+    private readonly bool _browser, _private;
     private readonly Border _loading;
     private bool _drmChecked;
     private WebPad? _pad;
@@ -166,20 +177,25 @@ public sealed class WebScreen : Screen
 
     public override string Context => "Web";
     public override string Title => _tile.Name;
+    public bool IsPrivate => _private;
     public override bool WantsAmbient => false;
     public override bool ShowsChrome => false;
     public override bool ShowsBackdrop => false;
 
-    public WebScreen(Tile tile)
+    /// <param name="browser">Lounge's browser: View offers an address or search to go to.</param>
+    /// <param name="inPrivate">Private browsing: nothing is kept after it closes.</param>
+    public WebScreen(Tile tile, bool browser = false, bool inPrivate = false)
     {
         _tile = tile;
+        _browser = browser;
+        _private = inPrivate;
         Background = Brushes.Black;
-        _host = new WebViewHost(tile);
+        _host = new WebViewHost(tile, inPrivate);
         _loading = new Border
         {
             Background = Brushes.Black,
             Child = Ui.V(20, Ui.Monogram(tile.Name, tile.Color, 140).Also(m => { m.Width = 140; m.Height = 140; m.CornerRadius = new CornerRadius(30); }),
-                Ui.Text($"Opening {tile.Name}...", T.Heading, Brushes.White, FontWeight.SemiBold)).Align(HorizontalAlignment.Center, VerticalAlignment.Center),
+                Ui.Text(inPrivate ? "Opening a private window..." : $"Opening {tile.Name}...", T.Heading, Brushes.White, FontWeight.SemiBold)).Align(HorizontalAlignment.Center, VerticalAlignment.Center),
         };
         Children.Add(_host);
         Children.Add(_loading);
@@ -208,7 +224,13 @@ public sealed class WebScreen : Screen
                 else CheckDrm(c);
                 _host.Focus2();
                 await pad.PageReady();
-                if (!_helped) { _helped = true; await pad.Hint(pad.HelpText, 9000); }
+                if (!_helped)
+                {
+                    _helped = true;
+                    // One hint at a time (a new one replaces the last), so private mode leads this one.
+                    await pad.Hint((_private ? "Private: nothing is kept when you leave  ·  " : "") +
+                                   (_browser ? "View: address or search  ·  " : "") + pad.HelpText, 9000);
+                }
                 if (SelfCheck.Active) _ = ReportSelfCheck(c, a.IsSuccess).ContinueWith(r => { if (r.Exception is { } x) { SelfCheck.Report("web-error", new { error = x.ToString() }); Dispatcher.UIThread.Post(() => L.Window.Exit()); } });
             });
             c.CoreWebView2.FrameCreated += (_, a) => Track(a.Frame);
@@ -653,13 +675,36 @@ public sealed class WebScreen : Screen
         });
     }
 
+    /// <summary>The browser's address bar: the controller keyboard, starting from the
+    /// page's address. An address opens; anything else is searched for.</summary>
+    private void GoTo()
+    {
+        var web = _host.Controller?.CoreWebView2;
+        if (web is null) return;
+        _typeQuietUntil = Environment.TickCount64 + 1500;
+        L.Window.Keyboard(new KeyboardRequest(_private ? "Address or search (private)" : "Address or search", web.Source, SelectAll: true), text =>
+        {
+            _typeQuietUntil = Environment.TickCount64 + 1500;
+            if (text is null) return;
+            _host.Controller?.CoreWebView2.Navigate(Lounge.Core.Web.WebText.AddressOrSearch(text));
+        });
+    }
+
     private void Options()
     {
         var c = _host.Controller;
         var pad = _pad;
-        L.Window.Menu(_tile.Name,
+        var items = new List<MenuEntry> { new("Back to Lounge", "home", Leave) };
+        if (_browser)
+        {
+            items.Add(new MenuEntry("Go to an address or search", "search", () => DispatcherTimer.RunOnce(GoTo, TimeSpan.FromMilliseconds(250)),
+                c is null ? null : Lounge.Core.Web.WebText.Address(c.CoreWebView2.Source)));
+            items.Add(new MenuEntry("Go forward a page", "chevron", () => { if (c?.CoreWebView2.CanGoForward == true) c.CoreWebView2.GoForward(); }));
+            if (!_private) items.Add(new MenuEntry("New private window", "eye-off", () => Browser.Start(inPrivate: true)));
+        }
+        L.Window.Menu(_private ? "Private browsing" : _tile.Name,
         [
-            new MenuEntry("Back to Lounge", "home", Leave),
+            ..items,
             new MenuEntry("Pointer", "mouse", () => { if (pad is not null) _ = pad.TogglePointer(); }, pad?.PointerMode == true ? "On" : "Off"),
             new MenuEntry("Keyboard", "keyboard", () => { if (c is not null) _ = TypeIntoFocused(c.CoreWebView2); }),
             new MenuEntry("Extensions", "puzzle", ExtensionsMenu),
@@ -668,7 +713,13 @@ public sealed class WebScreen : Screen
             new MenuEntry("Reload", "refresh", () => c?.CoreWebView2.Reload()),
             new MenuEntry("Zoom in", "plus", () => { if (c is not null) c.ZoomFactor = Math.Min(3, c.ZoomFactor + 0.1); }),
             new MenuEntry("Zoom out", "search", () => { if (c is not null) c.ZoomFactor = Math.Max(0.5, c.ZoomFactor - 0.1); }),
-            new MenuEntry("Open in full browser", "external", () => { Leave(); Launcher.Launch(_tile.Clone().Also(t => t.OpenExternally = true)); }),
+            new MenuEntry("Open in full browser", "external", () =>
+            {
+                // The browser opens the page you are on; a site's tile opens the site.
+                var target = _browser && c is not null ? c.CoreWebView2.Source : _tile.Target;
+                Leave();
+                Launcher.Launch(_tile.Clone().Also(t => { t.Target = target; t.OpenExternally = true; }));
+            }),
         ]);
     }
 

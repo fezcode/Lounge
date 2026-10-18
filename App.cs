@@ -49,7 +49,7 @@ public class App : Application
             if (Instance is not null) Instance.Activated += args => Dispatcher.UIThread.Post(() => window.OnActivated(args));
             window.Opened += (_, _) =>
             {
-                if (SelfCheck.Active && !StartArgs.Contains("--play") && !StartArgs.Contains("--web"))
+                if (SelfCheck.Active && !StartArgs.Contains("--play") && !StartArgs.Contains("--web") && !StartArgs.Contains("--browse"))
                     DispatcherTimer.RunOnce(() =>
                     {
                         // Real-window check of a normal start: capture home, report, exit.

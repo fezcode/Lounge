@@ -785,7 +785,7 @@ public sealed class PlayerScreen : Screen
                 _ = at;
             }));
         items.Add(new MenuEntry("Stop", "stop", Stop, Danger: true));
-        L.Window.Menu(_title.Text ?? "Playing", items);
+        L.Window.Menu(_title.Text ?? "Playing", items, clock: true);
     }
 
     private void UpdateInfo()
