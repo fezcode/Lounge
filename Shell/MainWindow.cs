@@ -643,6 +643,7 @@ public sealed class MainWindow : Window
             Push(new WebScreen(L.Tiles.All.FirstOrDefault(t => t.IsWeb && t.Target == args[web + 1])?.Clone()
                 ?? new Lounge.Core.Launch.Tile { Kind = Lounge.Core.Launch.TileKind.Web, Name = "Web check", Target = args[web + 1], AllowMouse = true }));
         if (args.Contains("--web-apps")) Push(new AppsScreen(web: true));
+        if (args.Contains("--apps")) Push(new AppsScreen());
         var files = Array.IndexOf(args, "--files");
         if (files >= 0 && files + 1 < args.Length) Push(new FilesScreen(args[files + 1]));
         var lone = args.FirstOrDefault(a => !a.StartsWith("--") && (File.Exists(a) || Directory.Exists(a)));

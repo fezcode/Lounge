@@ -73,6 +73,8 @@ Check("Menu opens settings; the theme changes from the controller", ChangeTheme)
             Check("Holding A picks a home tile up and the D-pad moves it", MoveTile);
             Check("Every theme renders its own home", ThemesDiffer);
 Check("Screening Room's home animates without errors as focus moves", ScreeningHome);
+        Check("Arcade's menu lights one arrow, on the chosen entry", ArcadeHome);
+        Check("Tile logos stay on their tiles every time a screen is built", TileLogosSurviveRebuilds);
             Check("The keyboard fits on screen in every layer", KeyboardFits);
             Check("While an app runs, only the return chord is heard", DormantChord);
             Check("When a launched app quits by itself, Lounge listens again", DormantRealProcess);
@@ -216,6 +218,76 @@ Check("On the Web screen, X opens a site's options", WebOptionsWithX);
         Assert(_w.Top.Focused != start, "focus stopped moving");
         }
         finally { Motion.Enabled = false; Pump(60); }
+        L.Settings.Set(K.Theme, "aurora");
+        _w.ApplyTheme(rebuild: true);
+    }
+
+    /// <summary>A tile's logo must show every time its tile is built, not just the first:
+    /// 1.0.20 and earlier wiped a logo that was already in memory off its tile, so after any
+    /// rebuild (coming back to a screen, an icon arriving) every tile went blank.</summary>
+    private static void TileLogosSurviveRebuilds()
+    {
+        var netflix = TileStore.Defaults().Single(t => t.Id == "netflix");
+        static bool HasPicture(Control c) => c switch
+        {
+            Border { Background: Avalonia.Media.ImageBrush } => true,
+            Border b when b.Child is Control child => HasPicture(child),
+            Panel p => p.Children.Any(HasPicture),
+            ContentControl { Content: Control inner } => HasPicture(inner),
+            Decorator { Child: Control d } => HasPicture(d),
+            _ => false,
+        };
+        for (var pass = 1; pass <= 3; pass++)
+        {
+            var art = HomeModel.Art(HomeModel.TileEntry(netflix), 380, 214);
+            if (pass == 1) { var until = DateTime.Now.AddSeconds(3); while (DateTime.Now < until && !HasPicture(art)) Pump(5); }
+            Assert(HasPicture(art), $"build {pass}: the Netflix logo isn't on its tile");
+        }
+    }
+
+    /// <summary>Arcade's menu: one blinking arrow, on the chosen entry only. (1.0.20 left
+    /// arrows lit on entries focus had already left.)</summary>
+    private static void ArcadeHome()
+    {
+        L.Settings.Set(K.Theme, "arcade");
+        _w.ApplyTheme(rebuild: true);
+        Pump(20);
+        Motion.Enabled = true;   // the blink only runs with motion on
+        try
+        {
+            _w.ApplyTheme(rebuild: true);
+            Pump(20);
+            int Lit() => _w.Top!.GetVisualDescendants().OfType<Avalonia.Controls.Shapes.Path>()
+                .Count(p => p.Height == 30 && p.Opacity > 0.01);
+            for (int i = 0; i < 3; i++) { Press(PadButton.DPadDown); Pump(12); }
+            var deadline = DateTime.Now.AddSeconds(1.6);
+            var worst = 0;
+            while (DateTime.Now < deadline) { Pump(4); worst = Math.Max(worst, Lit()); }   // across several blinks
+            Assert(worst == 1, $"{worst} menu arrows lit at once");
+            for (int i = 0; i < 3; i++) { Press(PadButton.DPadUp); Pump(12); }
+            deadline = DateTime.Now.AddSeconds(1.6);
+            worst = 0;
+            while (DateTime.Now < deadline) { Pump(4); worst = Math.Max(worst, Lit()); }
+            Assert(worst == 1, $"{worst} menu arrows lit after coming back up");
+
+            // Open a category and come back with B: still one arrow, on the entry you left from.
+            for (int i = 0; i < 2; i++) { Press(PadButton.DPadDown); Pump(12); }
+            var opened = _w.Top!.Focused;
+            Press(PadButton.A); Pump(30);
+            Assert(_w.Top is not HomeScreen, "A didn't open the category");
+            Press(PadButton.B); Pump(40);
+            Assert(_w.Top is HomeScreen, "B didn't come back home");
+            deadline = DateTime.Now.AddSeconds(1.6);
+            worst = 0;
+            while (DateTime.Now < deadline) { Pump(4); worst = Math.Max(worst, Lit()); }
+            var lit = _w.Top!.GetVisualDescendants().OfType<Avalonia.Controls.Shapes.Path>().Where(p => p.Height == 30 && p.Opacity > 0.01).ToList();
+            var focusedPaths = (_w.Top.Focused?.View as Visual)?.GetVisualDescendants().OfType<Avalonia.Controls.Shapes.Path>().ToList() ?? [];
+            Assert(worst == 1, $"{worst} menu arrows lit after coming back from a category");
+            Assert(lit.Count == 1 && focusedPaths.Contains(lit[0]), "the lit arrow isn't on the focused entry");
+            var focusedText = string.Join(" ", (_w.Top.Focused?.View as Visual)?.GetVisualDescendants().OfType<TextBlock>().Select(t => t.Text) ?? []);
+            Assert(focusedText.Contains("APPS"), $"came back on \"{focusedText}\", not the category it left from");
+        }
+        finally { Motion.Enabled = false; Pump(20); }
         L.Settings.Set(K.Theme, "aurora");
         _w.ApplyTheme(rebuild: true);
     }

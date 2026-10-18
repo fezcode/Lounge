@@ -99,7 +99,6 @@ internal static class Program
                 Show(new RemoteScreen(), $"{t}-remote");
             Show(new ControllersScreen(), $"{t}-controllers");
             if (t == "arcade") Show(new StarfallScreen(demoSeconds: 40), "starfall");
-            if (t == "arcade") Show(new HellgateScreen(previewSeconds: 2.5), "hellgate");
 
                 var files = new FilesScreen(sample);
                 _window.Push(files);

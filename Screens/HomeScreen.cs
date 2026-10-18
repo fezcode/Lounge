@@ -60,6 +60,11 @@ public sealed class HomeScreen : Screen
         _entries.Clear();
         _blink?.Stop();
         _blink = null;
+        // A line-up still due from the old layout must not land on the new one.
+        _contentDebounce?.Dispose();
+        _contentDebounce = null;
+        _fallbackFocus = null;
+        _building = true;
         _previewId = null;
         _kodiShown = null;
         _programmeShown = null;
@@ -74,10 +79,13 @@ public sealed class HomeScreen : Screen
             HomeLayout.Cabinet => Cabinet(),
             _ => Aurora(),
         };
+        _building = false;
         Children.Add(content);
         UseScope(root);
         if (_restoreTitle is not null && _entries.FirstOrDefault(kv => kv.Value.Title == _restoreTitle).Key is { } again)
             FocusItem(again);
+        else if (_fallbackFocus is not null)
+            FocusItem(_fallbackFocus);
         UpdateHero(Focused);
     }
 
@@ -373,7 +381,7 @@ public sealed class HomeScreen : Screen
             stack.Children.Add(info);
         }
         host.Content = new ScrollViewer { Content = stack, VerticalScrollBarVisibility = ScrollBarVisibility.Hidden, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-        RefreshFocus();
+        if (!_building) RefreshFocus();
     }
 
     // ------------------------------------------------------------------ Console One (PS5)
@@ -564,6 +572,11 @@ public sealed class HomeScreen : Screen
     }
 
     private string? _programmeShown;
+    /// <summary>True while a layout is being built: the old scope is still in place then, and
+    /// refreshing it would fire focus changes on the discarded layout.</summary>
+    private bool _building;
+    /// <summary>Where focus goes when the remembered entry isn't on the new layout.</summary>
+    private FocusItem? _fallbackFocus;
 
     /// <summary>How a line-up beside a destination list speaks: Screening Room's programme
     /// labels under a fine rule, or Arcade's banners.</summary>
@@ -630,12 +643,14 @@ public sealed class HomeScreen : Screen
             stack.Children.Add(card);
         }
         host.Content = new ScrollViewer { Content = stack, VerticalScrollBarVisibility = ScrollBarVisibility.Hidden, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-        RefreshFocus();
+        if (!_building) RefreshFocus();
     }
 
     // ------------------------------------------------------------------ Arcade (cabinet)
 
     private DispatcherTimer? _blink;
+    /// <summary>Arcade: the destination last chosen, so coming back reopens it.</summary>
+    private string? _cabinetDest;
 
     private static readonly LineupStyle ArcadeStyle = new(
         label => Ui.H(14, PixelArrow(18, T.Danger), Ui.Display(Ui.Text(label.ToUpperInvariant(), 22, T.Accent)),
@@ -674,7 +689,9 @@ public sealed class HomeScreen : Screen
         var lineupHost = new ContentControl();
         var lineupFocus = root.Add(new FocusList(horizontal: false, rememberIndex: false));
         Control? activeCursor = null;
-        foreach (var d in HomeModel.Destinations())
+        var destinations = HomeModel.Destinations();
+        var reopen = destinations.FirstOrDefault(x => x.Title == _cabinetDest) ?? destinations[0];
+        foreach (var d in destinations)
         {
             var sid = d.Title switch { "Videos" => "videos", "Music" => "music", "Apps & Games" => "apps", "Web" => "web", _ => null };
             var cursor = PixelArrow(30, T.Accent);
@@ -690,8 +707,10 @@ public sealed class HomeScreen : Screen
             {
                 title.Foreground = f ? T.Accent : T.TextFaint;
                 cursor.Opacity = f ? 1 : 0;
-                if (!f) return;
+                // The blink follows focus only: an entry focus has left keeps no arrow.
+                if (!f) { if (activeCursor == cursor) activeCursor = null; return; }
                 activeCursor = cursor;
+                _cabinetDest = d.Title;
                 _contentDebounce?.Dispose();
                 _contentDebounce = DispatcherTimer.RunOnce(() => FillLineup(lineupHost, lineupFocus, d, sid is null ? null : sections.GetValueOrDefault(sid), sections.GetValueOrDefault("jump"), ArcadeStyle), TimeSpan.FromMilliseconds(130));
             };
@@ -699,13 +718,16 @@ public sealed class HomeScreen : Screen
             _entries[card.Item] = d;
             menu.Children.Add(card);
             menuFocus.Add(card.Item);
+            if (d == reopen) _fallbackFocus = card.Item;
         }
 
         var pressStart = Ui.H(14, Ui.Display(Ui.Text("PRESS", 22, T.Text)), Hints.Glyph(PadButton.A, 36), Ui.Display(Ui.Text("TO START", 22, T.Text)));
         grid.Children.Add(menu.Col(0).Row(1));
         grid.Children.Add(lineupHost.Col(1).Row(1));
         grid.Children.Add(Ui.V(22, pressStart, HintBar()).Margin(96, 0, 0, 40).Col(0, 2).Row(2));
-        FillLineup(lineupHost, lineupFocus, HomeModel.Destinations()[0], sections.GetValueOrDefault("videos"), sections.GetValueOrDefault("jump"), ArcadeStyle);
+        var reopenId = reopen.Title switch { "Videos" => "videos", "Music" => "music", "Apps & Games" => "apps", "Web" => "web", _ => null };
+        _programmeShown = null;
+        FillLineup(lineupHost, lineupFocus, reopen, reopenId is null ? null : sections.GetValueOrDefault(reopenId), sections.GetValueOrDefault("jump"), ArcadeStyle);
 
         // Arcade blink: the cursor and "press start" flash on a steady beat.
         if (Motion.Enabled)
@@ -721,11 +743,14 @@ public sealed class HomeScreen : Screen
         return (grid, root);
     }
 
-    /// <summary>A right-pointing arrow drawn in whole pixels, the cursor of every arcade menu.</summary>
-    private static Control PixelArrow(double height, IBrush brush) => new Viewbox
+    /// <summary>A right-pointing arrow drawn in whole pixels, the cursor of every arcade menu.
+    /// The path is stretched to size itself, not scaled inside a Viewbox: a Viewbox'd shape
+    /// repainted only its tiny unscaled area when its opacity changed, so blinking cursors
+    /// left stale arrows behind on entries focus had already left.</summary>
+    private static Control PixelArrow(double height, IBrush brush) => new Avalonia.Controls.Shapes.Path
     {
-        Width = height * 5 / 8, Height = height, VerticalAlignment = VerticalAlignment.Center,
-        Child = new Avalonia.Controls.Shapes.Path { Data = Geometry.Parse("M0,0 H2 V1 H3 V2 H4 V3 H5 V5 H4 V6 H3 V7 H2 V8 H0 Z"), Fill = brush, Width = 5, Height = 8 },
+        Data = Geometry.Parse("M0,0 H2 V1 H3 V2 H4 V3 H5 V5 H4 V6 H3 V7 H2 V8 H0 Z"), Fill = brush,
+        Width = height * 5 / 8, Height = height, Stretch = Stretch.Fill, VerticalAlignment = VerticalAlignment.Center,
     };
 
     // ------------------------------------------------------------------ input

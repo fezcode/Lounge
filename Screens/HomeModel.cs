@@ -235,9 +235,8 @@ public static class HomeModel
         if (e.Tile?.Logo.Length > 0)
         {
             // A wordmark: wide and unclipped, sized to the tile.
-            grid.Children.Add(ImageCache.Art(e.Art!, w * 0.5, h * 0.42, stretch: Stretch.Uniform).Also(a =>
+            grid.Children.Add(ImageCache.ArtNow(e.Art!, w * 0.5, h * 0.42, stretch: Stretch.Uniform, waiting: Brushes.Transparent).Also(a =>
             {
-                a.Background = Brushes.Transparent;
                 a.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center;
                 a.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center;
             }));
@@ -252,7 +251,7 @@ public static class HomeModel
             HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
             BoxShadow = new BoxShadows(new BoxShadow { OffsetY = size * 0.06, Blur = size * 0.25, Color = Color.FromArgb(120, 0, 0, 0) }),
-            Child = ImageCache.Art(e.Art!, size, size, stretch: Stretch.Uniform).Also(a => a.Background = Brushes.Transparent),
+            Child = ImageCache.ArtNow(e.Art!, size, size, stretch: Stretch.Uniform, waiting: Brushes.Transparent),
         });
         return grid;
     }
@@ -268,7 +267,7 @@ public static class HomeModel
             // App icons are small square pictures: centre them on their brand colour.
             var bg = new Border { Width = w, Height = h, Background = Wash(e.Color) };
             var size = Math.Min(w, h) * 0.56;
-            bg.Child = ImageCache.Art(e.Art, size, size, stretch: Stretch.Uniform).Also(a => { a.Background = Brushes.Transparent; a.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center; a.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center; });
+            bg.Child = ImageCache.ArtNow(e.Art, size, size, stretch: Stretch.Uniform, waiting: Brushes.Transparent).Also(a => { a.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center; a.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center; });
             return bg;
         }
         if (e.Video is not null && e.Art is null) return ImageCache.VideoArt(e.Video, w, h, placeholder);

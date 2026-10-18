@@ -74,7 +74,7 @@ public sealed class TileStore
 
     /// <summary>One-time changes to saved tiles, recorded beside tiles.json so each runs
     /// once and a later choice by the user (removing a tile, switching it back) sticks.</summary>
-    private static readonly string[] Migrations = ["logos", "prime-inside", "hbomax", "starfall", "hellgate"];
+    private static readonly string[] Migrations = ["logos", "prime-inside", "hbomax", "starfall", "hellgate-gone"];
 
     private string MigrationsPath => Path.ChangeExtension(_path, ".migrations");
 
@@ -133,12 +133,8 @@ public sealed class TileStore
                 var steam = tiles.FindIndex(t => t.Id == "steam");
                 tiles.Insert(steam >= 0 ? steam + 1 : Math.Min(2, tiles.Count), Defaults().Single(d => d.Id == "starfall"));
             }
-            // 1.0.20: Hellgate, Lounge's own Doom-style shooter, beside Starfall.
-            if (done.Add("hellgate") && !tiles.Any(t => t.Id == "hellgate"))
-            {
-                var after = tiles.FindIndex(t => t.Id == "starfall");
-                tiles.Insert(after >= 0 ? after + 1 : Math.Min(2, tiles.Count), Defaults().Single(d => d.Id == "hellgate"));
-            }
+            // 1.0.21: Hellgate (1.0.20's Doom-style game) is gone; so is its tile.
+            if (done.Add("hellgate-gone")) tiles.RemoveAll(t => t.Kind == TileKind.Builtin && t.Target == "hellgate");
             if (done.Count != before) { WriteMigrations(done); migrated = true; }
             return tiles;
         }
@@ -175,7 +171,6 @@ public sealed class TileStore
         new() { Id = "cogas", Kind = TileKind.Cogas, Name = "Cogas", Color = "#6C4BFF", IsGame = true },
         new() { Id = "steam", Kind = TileKind.Protocol, Name = "Steam Big Picture", Target = "steam://open/bigpicture", Color = "#1B2838", IsGame = true },
         new() { Id = "starfall", Kind = TileKind.Builtin, Name = "Starfall", Target = "starfall", Color = "#7A1FA2", IsGame = true, Logo = "starfall" },
-        new() { Id = "hellgate", Kind = TileKind.Builtin, Name = "Hellgate", Target = "hellgate", Color = "#8A1A10", IsGame = true, Logo = "hellgate" },
         new() { Id = "youtube", Kind = TileKind.Web, Name = "YouTube", Target = "https://www.youtube.com/tv", UserAgent = TvUserAgent, Color = "#FF0033" },
         new() { Id = "netflix", Kind = TileKind.Web, Name = "Netflix", Target = "https://www.netflix.com/browse", Color = "#E50914", AllowMouse = true, Logo = "netflix" },
         new() { Id = "disney", Kind = TileKind.Web, Name = "Disney+", Target = "https://www.disneyplus.com/", Color = "#113CCF", AllowMouse = true },

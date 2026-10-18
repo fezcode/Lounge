@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -119,10 +119,12 @@ public static class ImageCache
     }
 
     /// <summary>A border whose background becomes the picture once loaded: rounded
-    /// corners antialias properly on a fill, not on a clipped Image.</summary>
-    public static Border Art(string? path, double width, double height, Control? placeholder = null, Stretch stretch = Stretch.UniformToFill)
+    /// corners antialias properly on a fill, not on a clipped Image. The picture IS the
+    /// background, so callers must not set Background afterwards (that wiped every cached
+    /// logo off its tile); pass <paramref name="waiting"/> for what shows until it loads.</summary>
+    public static Border Art(string? path, double width, double height, Control? placeholder = null, Stretch stretch = Stretch.UniformToFill, IBrush? waiting = null)
     {
-        var border = new Border { Width = width, Height = height, Child = placeholder, Background = T.Surface };
+        var border = new Border { Width = width, Height = height, Child = placeholder, Background = waiting ?? T.Surface };
         if (string.IsNullOrEmpty(path)) return border;
         var decode = (int)Math.Clamp(width * 1.5, 64, 1920);
         if (TryGet($"{path}|{decode}") is { } ready)
@@ -145,6 +147,28 @@ public static class ImageCache
             if (await LoadAsync(path, decode) is { } again) Show(again);
         });
         return border;
+    }
+
+    /// <summary>Like <see cref="Art"/>, for small pictures that are already on disk (tile
+    /// icons, site icons, logos): decoded right away on the calling thread instead of
+    /// queued behind posters, so a tile never waits on, or gets lost in, the background
+    /// queue. A file that won't decode is deleted, so the icon is fetched or copied again,
+    /// and the tile falls back to the queued load.</summary>
+    public static Border ArtNow(string? path, double width, double height, Stretch stretch = Stretch.UniformToFill, IBrush? waiting = null)
+    {
+        if (string.IsNullOrEmpty(path)) return Art(path, width, height, stretch: stretch, waiting: waiting);
+        var decode = (int)Math.Clamp(width * 1.5, 64, 1920);
+        var key = $"{path}|{decode}";
+        var bmp = TryGet(key);
+        if (bmp is null && File.Exists(path))
+        {
+            bmp = Decode(path, decode);
+            if (bmp is not null) Put(key, bmp);
+            else if (new FileInfo(path).Length > 0)
+                try { File.Delete(path); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        }
+        if (bmp is null) return Art(path, width, height, stretch: stretch, waiting: waiting);
+        return new Border { Width = width, Height = height, Background = new ImageBrush(bmp) { Stretch = stretch } };
     }
 
     /// <summary>Poster art for a library video: its own art, else a frame grabbed from the
