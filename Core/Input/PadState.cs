@@ -43,6 +43,24 @@ public static class PadButtons
 
     public static int Count(PadButton combo) => System.Numerics.BitOperations.PopCount((uint)combo);
 
+    public const PadButton LeftStickDirections = PadButton.LSUp | PadButton.LSDown | PadButton.LSLeft | PadButton.LSRight;
+    public const PadButton RightStickDirections = PadButton.RSUp | PadButton.RSDown | PadButton.RSLeft | PadButton.RSRight;
+    public const PadButton StickDirections = LeftStickDirections | RightStickDirections;
+
+    /// <summary>What a capture adds: a stick pushed up and drifting right on the way is
+    /// "up", so once a direction of a stick is in, that stick's other directions stay out.</summary>
+    public static PadButton OneDirectionPerStick(PadButton captured, PadButton adding)
+    {
+        foreach (var stick in new[] { LeftStickDirections, RightStickDirections })
+        {
+            if ((captured & stick) != 0) adding &= ~stick;
+            else if (PopCountIn(adding, stick) > 1) adding &= ~stick | Split(adding & stick).First();
+        }
+        return adding;
+    }
+
+    private static int PopCountIn(PadButton combo, PadButton mask) => Count(combo & mask);
+
     public static string Label(PadButton b) => b switch
     {
         PadButton.DPadUp => "D-pad Up",

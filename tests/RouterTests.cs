@@ -323,6 +323,35 @@ public class RouterTests
     }
 
     [Fact]
+    public void Capture_takes_one_direction_of_a_stick_even_when_the_push_drifts()
+    {
+        var r = new Rig();
+        CaptureResult? got = null;
+        r.Router.BeginCapture(c => got = c);
+        void Rs(float x, float y) { r.Now += 16; r.Router.Update(new PadState(true, PadButton.None, RX: x, RY: y), r.Now); }
+        // Pushed right, rolling over to up on the way, then back to the middle.
+        Rs(0.9f, 0);
+        Rs(0.5f, 0.8f);
+        Rs(0, 0);
+        Assert.False(got!.Value.Cancelled);
+        Assert.Equal(PadButton.RSRight, got.Value.Binding.Buttons);
+        Assert.Equal(Gesture.Press, got.Value.Binding.Gesture);
+    }
+
+    [Fact]
+    public void Each_stick_direction_can_do_its_own_thing()
+    {
+        var k = Keymap.Defaults();
+        k.Rebind("Player", Act.ZoomIn, null, new InputBinding(PadButton.RSUp, Gesture.Press), ConflictMode.Replace);
+        k.Rebind("Player", Act.ZoomOut, null, new InputBinding(PadButton.RSDown, Gesture.Press), ConflictMode.Replace);
+        var r = new Rig("Player", k);
+        void Rs(float y) { r.Now += 16; r.Router.Update(new PadState(true, PadButton.None, RY: y), r.Now); }
+        Rs(0.9f); Rs(0);
+        Rs(-0.9f); Rs(0);
+        Assert.Equal([Act.ZoomIn, Act.ZoomOut], r.Events.Where(e => e.Phase == ActionPhase.Pressed).Select(e => e.Action));
+    }
+
+    [Fact]
     public void Remapped_button_takes_effect_immediately()
     {
         var k = Keymap.Defaults();

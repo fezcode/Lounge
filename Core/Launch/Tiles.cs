@@ -37,6 +37,8 @@ public sealed class Tile
     public string Logo { get; set; } = "";
     public string UserAgent { get; set; } = "";
     public bool AllowMouse { get; set; }
+    /// <summary>A website's own page zoom (1.25 = 125%); 0 uses the Page zoom setting.</summary>
+    public double Zoom { get; set; }
     public bool OpenExternally { get; set; }
     public bool IsGame { get; set; }
     public ReturnBehaviour OnReturn { get; set; } = ReturnBehaviour.Default;

@@ -11,6 +11,7 @@ using Lounge.Core;
 using Lounge.Core.Input;
 using Lounge.Core.Launch;
 using Lounge.Core.Settings;
+using Lounge.Core.Web;
 using Lounge.Shell;
 using Microsoft.Web.WebView2.Core;
 
@@ -74,9 +75,9 @@ public sealed class WebViewHost : NativeControlHost
             s.IsWebMessageEnabled = false;
             s.AreHostObjectsAllowed = false;
             if (!string.IsNullOrEmpty(_tile.UserAgent)) s.UserAgent = _tile.UserAgent;
-            else if (L.Settings.String(K.WebIdentity) == "chrome") s.UserAgent = Lounge.Core.Web.WebText.ChromeUserAgent(s.UserAgent);
+            else if (L.Settings.String(K.WebIdentity) == "chrome") s.UserAgent = WebText.ChromeUserAgent(s.UserAgent);
             if (SelfCheck.Active && Environment.GetEnvironmentVariable("LOUNGE_WEB_UA") is { Length: > 0 } ua) s.UserAgent = ua;
-            Controller.ZoomFactor = L.Settings.Double(K.WebZoom);
+            Controller.ZoomFactor = _tile.Zoom > 0 ? _tile.Zoom : L.Settings.Double(K.WebZoom);
             Resize();
             Ready?.Invoke(Controller);
         }
@@ -472,6 +473,11 @@ public sealed class WebScreen : Screen
     {
         // Leaving, settings and volume are Lounge's everywhere.
         if (e.Action is Act.Home or Act.Settings or Act.VolumeUp or Act.VolumeDown) return false;
+        if (e.Action is Act.ZoomIn or Act.ZoomOut)
+        {
+            if (e.Phase is ActionPhase.Pressed or ActionPhase.Repeated) StepZoom(e.Action == Act.ZoomIn ? 1 : -1);
+            return true;
+        }
         var pad = _pad;
         var web = _host.Controller?.CoreWebView2;
         if (pad is null || web is null)
@@ -576,7 +582,7 @@ public sealed class WebScreen : Screen
         {
             var headers = a.Request.Headers;
             foreach (var name in new[] { "sec-ch-ua", "sec-ch-ua-full-version-list" })
-                if (headers.Contains(name)) headers.SetHeader(name, Lounge.Core.Web.WebText.RewriteBrands(headers.GetHeader(name), identity));
+                if (headers.Contains(name)) headers.SetHeader(name, WebText.RewriteBrands(headers.GetHeader(name), identity));
         };
     }
     private void Leave()
@@ -686,7 +692,7 @@ public sealed class WebScreen : Screen
         {
             _typeQuietUntil = Environment.TickCount64 + 1500;
             if (text is null) return;
-            _host.Controller?.CoreWebView2.Navigate(Lounge.Core.Web.WebText.AddressOrSearch(text));
+            _host.Controller?.CoreWebView2.Navigate(WebText.AddressOrSearch(text));
         });
     }
 
@@ -698,7 +704,7 @@ public sealed class WebScreen : Screen
         if (_browser)
         {
             items.Add(new MenuEntry("Go to an address or search", "search", () => DispatcherTimer.RunOnce(GoTo, TimeSpan.FromMilliseconds(250)),
-                c is null ? null : Lounge.Core.Web.WebText.Address(c.CoreWebView2.Source)));
+                c is null ? null : WebText.Address(c.CoreWebView2.Source)));
             items.Add(new MenuEntry("Go forward a page", "chevron", () => { if (c?.CoreWebView2.CanGoForward == true) c.CoreWebView2.GoForward(); }));
             if (!_private) items.Add(new MenuEntry("New private window", "eye-off", () => Browser.Start(inPrivate: true)));
         }
@@ -711,8 +717,7 @@ public sealed class WebScreen : Screen
             new MenuEntry("Show controls", "info", () => { if (pad is not null) DispatcherTimer.RunOnce(() => _ = pad.Hint(pad.HelpText, 9000), TimeSpan.FromMilliseconds(300)); }),
             new MenuEntry("Go back a page", "back", () => { if (c?.CoreWebView2.CanGoBack == true) c.CoreWebView2.GoBack(); }),
             new MenuEntry("Reload", "refresh", () => c?.CoreWebView2.Reload()),
-            new MenuEntry("Zoom in", "plus", () => { if (c is not null) c.ZoomFactor = Math.Min(3, c.ZoomFactor + 0.1); }),
-            new MenuEntry("Zoom out", "search", () => { if (c is not null) c.ZoomFactor = Math.Max(0.5, c.ZoomFactor - 0.1); }),
+            new MenuEntry("Zoom", "search", () => DispatcherTimer.RunOnce(ZoomMenu, TimeSpan.FromMilliseconds(250)), c is null ? null : WebZoom.Percent(c.ZoomFactor)),
             new MenuEntry("Open in full browser", "external", () =>
             {
                 // The browser opens the page you are on; a site's tile opens the site.
@@ -721,6 +726,39 @@ public sealed class WebScreen : Screen
                 Launcher.Launch(_tile.Clone().Also(t => { t.Target = target; t.OpenExternally = true; }));
             }),
         ]);
+    }
+
+    /// <summary>View > Zoom: every level at once, the current one ticked, so any zoom is
+    /// one press away. The choice is remembered for the site.</summary>
+    private void ZoomMenu()
+    {
+        if (_host.Controller is not { } c) return;
+        var standard = L.Settings.Double(K.WebZoom);
+        var items = WebZoom.Levels.Select(z => new MenuEntry(WebZoom.Percent(z), "", () => SetZoom(z),
+            Math.Abs(z - standard) < 0.001 ? "Default" : null, Checked: Math.Abs(z - c.ZoomFactor) < 0.001)).ToList();
+        if (!WebZoom.Levels.Any(z => Math.Abs(z - standard) < 0.001))
+            items.Add(new MenuEntry($"Default ({WebZoom.Percent(standard)})", "", () => SetZoom(standard), Checked: Math.Abs(standard - c.ZoomFactor) < 0.001));
+        L.Window.Menu($"Zoom: {_tile.Name}", items);
+    }
+
+    /// <summary>Zoom in/out actions: the next level, shown briefly in the page.</summary>
+    private void StepZoom(int direction)
+    {
+        if (_host.Controller is not { } c) return;
+        SetZoom(WebZoom.Step(c.ZoomFactor, direction));
+        if (_pad is { } pad) _ = pad.Hint("Zoom " + WebZoom.Percent(c.ZoomFactor), 1200);
+    }
+
+    private void SetZoom(double zoom)
+    {
+        if (_host.Controller is not { } c) return;
+        c.ZoomFactor = Math.Clamp(zoom, WebZoom.Levels[0], WebZoom.Levels[^1]);
+        // A site's tile keeps its zoom; the browser goes back to the default next time.
+        if (!_browser && L.Tiles.Find(_tile.Id) is { } saved)
+        {
+            saved.Zoom = Math.Abs(c.ZoomFactor - L.Settings.Double(K.WebZoom)) < 0.001 ? 0 : c.ZoomFactor;
+            L.Tiles.Update(saved);
+        }
     }
 
     /// <summary>The volume display, drawn inside the page so it shows over the site.</summary>

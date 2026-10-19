@@ -44,6 +44,10 @@ public static class Act
     public const string PrevItem = "Player.Previous";
     public const string Screenshot = "Player.Screenshot";
 
+    // Web pages
+    public const string ZoomIn = "Web.ZoomIn";
+    public const string ZoomOut = "Web.ZoomOut";
+
     // On-screen keyboard
     public const string KeyBackspace = "Keyboard.Backspace";
     public const string KeySpace = "Keyboard.Space";
@@ -84,6 +88,7 @@ public static class Act
         new(Tracks, "Audio, subtitles and picture"), new(Info, "Information"),
         new(ToggleSubtitles, "Subtitles on/off"), new(NextItem, "Next in queue"), new(PrevItem, "Previous in queue"),
         new(Screenshot, "Take a screenshot"),
+        new(ZoomIn, "Zoom in (web pages)", true), new(ZoomOut, "Zoom out (web pages)", true),
         new(KeyBackspace, "Backspace", true), new(KeySpace, "Space", true),
         new(KeyCursorLeft, "Cursor left", true), new(KeyCursorRight, "Cursor right", true),
         new(KeyShift, "Shift / symbols"), new(KeySuggest, "Accept suggestion"), new(KeyDone, "Done"),

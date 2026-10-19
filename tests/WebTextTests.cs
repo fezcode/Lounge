@@ -87,4 +87,24 @@ public class WebTextTests
     [InlineData("", "https://www.google.com/")]
     public void Browser_opens_addresses_and_searches_for_everything_else(string typed, string expected) =>
         Assert.Equal(expected, WebText.AddressOrSearch(typed));
+
+    [Theory]
+    [InlineData(1.0, 1, 1.1)]
+    [InlineData(1.25, 1, 1.5)]
+    [InlineData(1.3, 1, 1.5)]
+    [InlineData(1.3, -1, 1.25)]
+    [InlineData(1.0, -1, 0.9)]
+    [InlineData(3.0, 1, 3.0)]
+    [InlineData(0.5, -1, 0.5)]
+    public void Zoom_steps_to_the_next_level(double from, int direction, double expected) =>
+        Assert.Equal(expected, WebZoom.Step(from, direction));
+
+    [Fact]
+    public void Zoom_from_100_to_200_takes_five_presses()
+    {
+        var z = 1.0;
+        for (var i = 0; i < 5; i++) z = WebZoom.Step(z, 1);
+        Assert.Equal(2.0, z);
+        Assert.Equal("125%", WebZoom.Percent(1.25));
+    }
 }

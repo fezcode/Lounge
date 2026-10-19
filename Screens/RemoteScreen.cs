@@ -194,13 +194,28 @@ public sealed class RemoteScreen : Screen
     private void AddBinding()
     {
         var analog = _button is PadButton.LT or PadButton.RT or PadButton.LeftStick or PadButton.RightStick;
+        var stick = _button is PadButton.LeftStick or PadButton.RightStick;
         var gestures = new List<MenuEntry>
         {
-            new("When pressed", "gamepad", () => PickAction(false, a => Bind(new InputBinding(_button, Gesture.Press), a))),
-            new("When held", "clock", () => PickAction(false, a => Bind(new InputBinding(_button, Gesture.Hold), a))),
+            new(stick ? "When clicked" : "When pressed", "gamepad", () => PickAction(false, a => Bind(new InputBinding(_button, Gesture.Press), a))),
+            new(stick ? "When clicked and held" : "When held", "clock", () => PickAction(false, a => Bind(new InputBinding(_button, Gesture.Hold), a))),
         };
+        // Each direction of a stick is a button of its own: push it up, down, left or right.
+        if (stick)
+        {
+            var left = _button == PadButton.LeftStick;
+            foreach (var (dir, name) in new[]
+                     {
+                         (left ? PadButton.LSUp : PadButton.RSUp, "up"), (left ? PadButton.LSDown : PadButton.RSDown, "down"),
+                         (left ? PadButton.LSLeft : PadButton.RSLeft, "left"), (left ? PadButton.LSRight : PadButton.RSRight, "right"),
+                     })
+            {
+                var d = dir;
+                gestures.Add(new MenuEntry($"When pushed {name}", "chevron", () => PickAction(false, a => Bind(new InputBinding(d, Gesture.Press), a))));
+            }
+        }
         if (analog)
-            gestures.Add(new MenuEntry("By pressure or direction", "speed", () => PickAction(true, a =>
+            gestures.Add(new MenuEntry(stick ? "By direction (all four, for pointers and scrolling)" : "By pressure", "speed", () => PickAction(true, a =>
             {
                 var buttons = _button switch
                 {
@@ -216,6 +231,21 @@ public sealed class RemoteScreen : Screen
     private void Bind(InputBinding input, string action)
     {
         var existing = L.Keymap.ActionFor(Ctx, input);
+        // A direction pushed while the whole stick also steers (the pointer, scrolling) does both.
+        var steering = input.Gesture != Gesture.Analog
+            ? L.Keymap.Effective(Ctx).FirstOrDefault(b => b.Input.Gesture == Gesture.Analog && (b.Input.Buttons & input.Buttons & PadButtons.StickDirections) != 0)
+            : null;
+        if (existing is null && steering is not null)
+        {
+            L.Window.Ask("That stick already steers here", $"Here the whole stick does \"{Act.Describe(steering.Action).Label}\", so pushing it also does that. Add it anyway?",
+                ["Add it", "Cancel"], 1, i =>
+                {
+                    if (i != 0) return;
+                    L.Keymap.Rebind(Ctx, action, null, input, ConflictMode.Replace);
+                    ShowBindings();
+                }, "gamepad");
+            return;
+        }
         if (existing is null || existing == action)
         {
             L.Keymap.Rebind(Ctx, action, null, input, ConflictMode.Replace);

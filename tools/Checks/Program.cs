@@ -70,6 +70,7 @@ Check("Menu opens settings; the theme changes from the controller", ChangeTheme)
             Check("A file is renamed with the controller keyboard", RenameFile);
             Check("New folder, copy and paste from the options menu", NewFolderCopyPaste);
             Check("A button is remapped on the Remote screen", RemapButton);
+            Check("Each stick direction maps on its own", StickDirections);
             Check("Holding A picks a home tile up and the D-pad moves it", MoveTile);
             Check("Every theme renders its own home", ThemesDiffer);
 Check("Screening Room's home animates without errors as focus moves", ScreeningHome);
@@ -434,6 +435,37 @@ Check("On the Web screen, X opens a site's options", WebOptionsWithX);
         Assert(accept == Act.Accept, $"X does {accept ?? "nothing"} instead of Select");
         Assert(secondary == Act.Secondary, $"A does {secondary ?? "nothing"} instead of the swapped action");
         L.Keymap.ResetAll();
+    }
+
+    /// <summary>A stick's directions map one by one: right stick up to Zoom in.</summary>
+    private static void StickDirections()
+    {
+        var remote = new RemoteScreen();
+        _w.Push(remote);
+        Pump();
+        typeof(RemoteScreen).GetField("_button", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.SetValue(remote, PadButton.RightStick);
+        typeof(RemoteScreen).GetMethod("AddBinding", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(remote, null);
+        Pump(10);
+        var menu = _w.GetVisualDescendants().OfType<ModalLayer>().Last();
+        var labels = menu.GetVisualDescendants().OfType<TextBlock>().Select(t => t.Text).ToList();
+        foreach (var dir in new[] { "up", "down", "left", "right" })
+            Assert(labels.Contains($"When pushed {dir}"), $"no \"When pushed {dir}\" for the right stick");
+        Press(PadButton.DPadDown); Press(PadButton.DPadDown);   // "When pushed up"
+        Press(PadButton.A);
+        Pump(20);
+        var at = Act.Catalog.Where(a => !a.Analog).ToList().FindIndex(a => a.Id == Act.ZoomIn);
+        for (var i = 0; i < at; i++) { Press(PadButton.DPadDown); Pump(2); }
+        Press(PadButton.A);                                       // Zoom in
+        Pump(20);
+        Press(PadButton.A);                                       // RS up pages up here: replace it
+        Pump(20);
+        var bound = L.Keymap.ActionFor("Global", new InputBinding(PadButton.RSUp, Gesture.Press));
+        Assert(bound == Act.ZoomIn, $"right stick up does {bound ?? "nothing"} instead of Zoom in");
+        Assert(L.Keymap.ActionFor("Global", new InputBinding(PadButton.RSDown, Gesture.Press)) == Act.PageDown, "right stick down changed too");
+        L.Keymap.ResetAll();
+        _w.CloseOverlays();
+        _w.Remove(remote);
+        Pump(20);
     }
 
     private static void MoveTile()

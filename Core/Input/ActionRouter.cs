@@ -303,8 +303,8 @@ public sealed class ActionRouter
     private void UpdateCapture(PadState state, PadButton pressed, long now)
     {
         var fresh = state.Buttons & ~_consumed;
-        if (pressed != 0) { _captureSet |= fresh & pressed; _captureLastPress = now; }
-        _captureSet |= fresh;
+        if (pressed != 0) { _captureSet |= PadButtons.OneDirectionPerStick(_captureSet, fresh & pressed); _captureLastPress = now; }
+        _captureSet |= PadButtons.OneDirectionPerStick(_captureSet, fresh);
         if (_captureSet != 0 && (state.Buttons & _captureSet) == _captureSet && now - _captureLastPress >= Options.HoldMs)
             _captureHeld = true;
 
