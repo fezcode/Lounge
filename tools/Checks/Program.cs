@@ -82,6 +82,9 @@ Check("Screening Room's home animates without errors as focus moves", ScreeningH
             Check("When a launched app quits by itself, Lounge listens again", DormantRealProcess);
             Check("A video plays, the D-pad skips and the trigger scrubs", PlayAndSeek);
 Check("In Now Playing, A presses the focused button and song", NowPlayingButtons);
+            Check("Leaving Now Playing asks whether to keep the music playing", LeaveMusic);
+            Check("CarPlay: icon pages, the sidebar beside every screen, the Dashboard", CarPlayHome);
+            Check("No text runs into other text, in any theme, with music on", NoTextOverlaps);
 Check("On the Web screen, X opens a site's options", WebOptionsWithX);
         }
         catch (Exception e)
@@ -675,6 +678,227 @@ Check("On the Web screen, X opens a site's options", WebOptionsWithX);
 
         Press(PadButton.B);
         Pump(10);
+        Assert(_w.Top is NowPlayingScreen && _w.Overlays.Count == 1, "B while playing did not ask about the music");
+        Press(PadButton.B);                        // B on the question: keep playing and leave
+        Pump(10);
         Assert(_w.Top is not NowPlayingScreen, "B did not leave Now Playing");
+        Assert(L.Player.IsPlaying, "the music stopped when it should keep playing");
+        L.Player.Close();
+    }
+
+    private static readonly string[] Songs = ["01 One.mp3", "02 Two.mp3"];
+
+    private static void LeaveMusic()
+    {
+        var song = Path.Combine(Path.GetTempPath(), "lounge-clips-v2", "song.mp3");
+        if (!File.Exists(song)) throw new InvalidOperationException("test song missing; run the unit tests first");
+        var dir = Path.Combine(Path.GetTempPath(), "lounge-checks-album");
+        Directory.CreateDirectory(dir);
+        var songs = Songs.Select(n => Path.Combine(dir, n)).ToList();
+        foreach (var s in songs) File.Copy(song, s, overwrite: true);
+        bool Wait(Func<bool> ok) { var d = DateTime.Now.AddSeconds(8); while (DateTime.Now < d && !ok()) Pump(5); return ok(); }
+
+        // "Stop the music": leaves and stops.
+        Playback.Open(songs[0], songs, 0);
+        Assert(Wait(() => L.Player.IsPlaying), $"not playing ({L.Player.State}, {L.Player.LastError})");
+        Press(PadButton.B); Pump(10);
+        Assert(_w.Overlays.Count == 1, "B while playing did not ask");
+        Press(PadButton.DPadRight); Press(PadButton.A); Pump(10);
+        Assert(_w.Top is not NowPlayingScreen, "Stop the music did not leave Now Playing");
+        Assert(Wait(() => !L.Player.IsPlaying), "Stop the music left the music playing");
+
+        // "Keep playing" chosen with A: leaves, and the music goes on.
+        Playback.Open(songs[0], songs, 0);
+        Assert(Wait(() => L.Player.IsPlaying), "not playing the second time");
+        Press(PadButton.B); Pump(10);
+        Press(PadButton.A); Pump(10);
+        Assert(_w.Top is not NowPlayingScreen && L.Player.IsPlaying, "Keep playing did not leave with the music on");
+
+        // Home, in any theme, offers the way back to the music.
+        _w.GoHome(); Pump(10);
+        var back = _w.Top!.GetVisualDescendants().OfType<Card>()
+            .FirstOrDefault(c => c.GetVisualDescendants().OfType<TextBlock>().Any(tb => tb.Text == "Now Playing"));
+        Assert(back is not null, "Home shows no Now Playing while music plays in the background");
+        back!.Item.Activate!();
+        Pump(10);
+        Assert(_w.Top is NowPlayingScreen, "Now Playing on Home did not open Now Playing");
+        L.Settings.Set(K.MusicOnLeave, "keep");
+        Press(PadButton.B); Pump(10);
+        L.Settings.Set(K.MusicOnLeave, "ask");
+
+        // The Music page too: a Now Playing bar above the albums, reached with up.
+        _w.Push(new MusicScreen()); Pump(10);
+        Assert(_w.Top!.GetVisualDescendants().OfType<TextBlock>().Any(tb => tb.Text == "NOW PLAYING"), "the Music page shows no Now Playing bar");
+        for (int i = 0; i < 4; i++) Press(PadButton.DPadUp);
+        Press(PadButton.A); Pump(10);
+        Assert(_w.Top is NowPlayingScreen, "up and A on the Music page did not open Now Playing");
+        L.Settings.Set(K.MusicOnLeave, "keep");
+        Press(PadButton.B); Pump(10);
+        L.Settings.Set(K.MusicOnLeave, "ask");
+        Assert(_w.Top is MusicScreen, "B from Now Playing did not come back to Music");
+
+        // The setting answers for good: no question, the music stops.
+        Playback.Open(songs[0], songs, 0);
+        Assert(Wait(() => L.Player.IsPlaying), "not playing the third time");
+        L.Settings.Set(K.MusicOnLeave, "stop");
+        try
+        {
+            Press(PadButton.B); Pump(10);
+            Assert(_w.Overlays.Count == 0 && _w.Top is not NowPlayingScreen, "with \"Stop the music\" set, B still asked");
+            Assert(Wait(() => !L.Player.IsPlaying), "with \"Stop the music\" set, the music kept playing");
+        }
+        finally { L.Settings.Set(K.MusicOnLeave, "ask"); L.Player.Close(); }
+    }
+
+    /// <summary>Where a text actually draws, in window coordinates, cut by whatever clips
+    /// it (scrolling lists); null when hidden or clipped away.</summary>
+    private static Rect? Drawn(TextBlock tb)
+    {
+        if (!tb.IsEffectivelyVisible || string.IsNullOrWhiteSpace(tb.Text) || tb.TextLayout is not { } layout) return null;
+        double opacity = 1;
+        foreach (var v in tb.GetSelfAndVisualAncestors()) opacity *= v.Opacity;
+        if (opacity < 0.2) return null;
+        var w = Math.Min(layout.Width, tb.Bounds.Width);
+        var h = Math.Min(layout.Height, tb.Bounds.Height);
+        var x = tb.TextAlignment switch
+        {
+            Avalonia.Media.TextAlignment.Center => (tb.Bounds.Width - w) / 2,
+            Avalonia.Media.TextAlignment.Right => tb.Bounds.Width - w,
+            _ => 0,
+        };
+        if (tb.TranslatePoint(new Point(x, 0), _w) is not { } at) return null;
+        var rect = new Rect(at, new Size(w, h));
+        foreach (var a in tb.GetVisualAncestors().OfType<Visual>())
+        {
+            if (!a.ClipToBounds || a.TranslatePoint(new Point(0, 0), _w) is not { } o) continue;
+            rect = rect.Intersect(new Rect(o, a.Bounds.Size));
+        }
+        rect = rect.Intersect(new Rect(0, 0, _w.DesignWidth, _w.DesignHeight));
+        return rect.Width * rect.Height < 4 ? null : rect;
+    }
+
+    private static List<string> Overlaps(string where)
+    {
+        // Toasts float over everything for a moment by design.
+        var texts = _w.GetVisualDescendants().OfType<TextBlock>()
+            .Where(tb => !tb.GetVisualAncestors().OfType<ToastHost>().Any())
+            .Select(tb => (tb, r: Drawn(tb))).Where(x => x.r is not null).ToList();
+        var found = new List<string>();
+        for (int i = 0; i < texts.Count; i++)
+            for (int j = i + 1; j < texts.Count; j++)
+            {
+                var o = texts[i].r!.Value.Intersect(texts[j].r!.Value);
+                // A few pixels of touching ascenders don't count; real collisions do.
+                // The same words twice in one place is a drop shadow or a layer drawn on its twin.
+                if (o.Width > 6 && o.Height > 6 && texts[i].tb.Text != texts[j].tb.Text)
+                    found.Add($"{where}: \"{texts[i].tb.Text}\" runs into \"{texts[j].tb.Text}\"");
+            }
+        return found;
+    }
+
+    private static void NoTextOverlaps()
+    {
+        var song = Path.Combine(Path.GetTempPath(), "lounge-clips-v2", "song.mp3");
+        if (!File.Exists(song)) throw new InvalidOperationException("test song missing; run the unit tests first");
+        var dir = Path.Combine(Path.GetTempPath(), "lounge-checks-album");
+        Directory.CreateDirectory(dir);
+        // A long title, like real tags: the corner chip at its widest.
+        var path = Path.Combine(dir, "All the Love feat. Andre Troutman and a Very Long Guest List.mp3");
+        File.Copy(song, path, overwrite: true);
+        bool Wait(Func<bool> ok) { var d = DateTime.Now.AddSeconds(8); while (DateTime.Now < d && !ok()) Pump(5); return ok(); }
+        L.Settings.Set(K.MusicOnLeave, "keep");
+        var found = new List<string>();
+        try
+        {
+            Playback.Open(path, [path], 0);
+            Assert(Wait(() => L.Player.IsPlaying), "the song did not play");
+            Press(PadButton.B); Pump(10);
+            foreach (var theme in Core.Themes.Themes.All)
+            {
+                L.Settings.Set(K.Theme, theme.Id);
+                _w.ApplyTheme(rebuild: true);
+                _w.GoHome();
+                Pump(20);
+                found.AddRange(Overlaps($"{theme.Id} home"));
+                if (theme.Id == "carplay")
+                {
+                    CarPlay.Dashboard = true;
+                    ((HomeScreen)_w.Top!).Rebuild(); Pump(20);
+                    found.AddRange(Overlaps("carplay dashboard"));
+                    CarPlay.Dashboard = false;
+                    ((HomeScreen)_w.Top!).Rebuild(); Pump(10);
+                }
+                foreach (var (name, make) in new (string, Func<Lounge.Shell.Screen>)[]
+                {
+                    ("videos", () => new VideosScreen()), ("music", () => new MusicScreen()),
+                    ("apps", () => new AppsScreen()), ("web", () => new AppsScreen(web: true)), ("files", () => new FilesScreen()),
+                })
+                {
+                    _w.Push(make()); Pump(20);
+                    found.AddRange(Overlaps($"{theme.Id} {name}"));
+                    _w.Pop(); Pump(10);
+                }
+                _w.Push(new NowPlayingScreen()); Pump(20);
+                found.AddRange(Overlaps($"{theme.Id} now playing"));
+                _w.Pop(); Pump(10);
+            }
+        }
+        finally
+        {
+            L.Settings.Set(K.MusicOnLeave, "ask");
+            L.Player.Close();
+            CarPlay.Dashboard = false;
+            L.Settings.Set(K.Theme, "aurora");
+            _w.ApplyTheme(rebuild: true);
+        }
+        Assert(found.Count == 0, $"{found.Count} overlaps:\n      " + string.Join("\n      ", found.Distinct()));
+    }
+
+    private static void CarPlayHome()
+    {
+        L.Settings.Set(K.Theme, "carplay");
+        _w.ApplyTheme(rebuild: true);
+        Pump(20);
+        try
+        {
+            var home = (HomeScreen)_w.Top!;
+            var apps = CarPlay.Apps();
+            Assert(apps.Count > 10, $"only {apps.Count} apps; the paging step needs a second page");
+            string Focused() => string.Join(" ", (home.Focused?.View as Visual)?.GetVisualAncestors().OfType<StackPanel>().FirstOrDefault()
+                ?.Children.OfType<TextBlock>().Select(t => t.Text) ?? []);
+            Assert(Focused() == "Videos", $"Home opened on \"{Focused()}\", not Videos");
+
+            // Right past the last column slides to the next page.
+            for (int i = 0; i < 5; i++) Press(PadButton.DPadRight);
+            Pump(10);
+            Assert(Focused() == apps[10].Title, $"right from the last column went to \"{Focused()}\", not {apps[10].Title}");
+            var strip = (home.Focused!.View as Visual)!.GetVisualAncestors().OfType<StackPanel>().First(s => s.Orientation == Avalonia.Layout.Orientation.Horizontal);
+            Assert(strip.RenderTransform is Avalonia.Media.TranslateTransform { X: < -100 }, "the pages did not slide over");
+
+            // Left all the way reaches the sidebar; its bottom button opens the Dashboard and back.
+            for (int i = 0; i < 12; i++) Press(PadButton.DPadLeft);
+            for (int i = 0; i < 6; i++) Press(PadButton.DPadDown);
+            Press(PadButton.A); Pump(10);
+            Assert(CarPlay.Dashboard && _w.Top is HomeScreen, "the Home button did not switch to the Dashboard");
+            Press(PadButton.A); Pump(10);
+            Assert(!CarPlay.Dashboard, "the Home button did not switch back to the apps");
+
+            // Other screens sit beside the window's sidebar.
+            var videos = new VideosScreen();
+            _w.Push(videos);
+            Pump(10);
+            var rail = _w.GetVisualDescendants().OfType<CarPlay.WindowRail>().Single();
+            Assert(rail.IsVisible && videos.Margin.Left == CarPlay.RailWidth, "Videos isn't beside the sidebar");
+            var first = videos.GetVisualDescendants().OfType<Card>().FirstOrDefault();
+            Assert(first is null || first.TranslatePoint(new Point(0, 0), _w)!.Value.X >= CarPlay.RailWidth, "a card sits under the sidebar");
+            _w.Pop();
+            Pump(10);
+        }
+        finally
+        {
+            CarPlay.Dashboard = false;
+            L.Settings.Set(K.Theme, "aurora");
+            _w.ApplyTheme(rebuild: true);
+        }
     }
 }

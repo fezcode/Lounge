@@ -83,6 +83,7 @@ public static class K
     public const string AmbientFolder = "audio.ambientFolder";
     public const string AmbientDelaySeconds = "audio.ambientDelaySeconds";
     public const string AmbientFadeMs = "audio.ambientFadeMs";
+    public const string MusicOnLeave = "audio.musicOnLeave";
 
     // Library
     public const string VideoRoots = "library.videoRoots";
@@ -142,6 +143,7 @@ public static class SettingsSchema
         new("series", "Series"),
         new("screening", "Screening Room"),
         new("arcade", "Arcade"),
+        new("carplay", "Motorcar Recital"),
     ];
 
     public static readonly IReadOnlyList<SettingChoice> Accents =
@@ -281,6 +283,9 @@ public static class SettingsSchema
             // ---- Audio
             Int(K.VolumeStep, "Audio", "Volume step (RB/LB)", 2, 1, 10, 1, "%"),
             Choice(K.AudioLanguage, "Audio", "Preferred audio language", "", Languages),
+            Choice(K.MusicOnLeave, "Audio", "Leaving Now Playing while music plays", "ask",
+                C("ask", "Ask", "keep", "Keep playing in the background", "stop", "Stop the music"),
+                "B on Now Playing. Music that keeps playing shows in the corner, or in the sidebar in Motorcar Recital."),
             Toggle(K.Ambient, "Audio", "Ambient music", true, "Soft music while you browse. Fades out whenever something else plays."),
             Int(K.AmbientVolume, "Audio", "Ambient volume", 35, 0, 100, 5, "%"),
             Choice(K.AmbientSource, "Audio", "Ambient source", "theme", C("theme", "Theme music", "folder", "My folder")),

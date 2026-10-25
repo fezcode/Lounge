@@ -47,6 +47,18 @@ public sealed class NowPlayingScreen : Screen
         times.Children.Add(_elapsed.Col(0));
         times.Children.Add(_remaining.Col(1).Align(HorizontalAlignment.Right, VerticalAlignment.Top));
 
+        _queueFocus = new FocusList(horizontal: false);
+        if (_car) BuildCar(times);
+        else BuildClassic(times);
+        Refresh();
+        _timer = new DispatcherTimer(TimeSpan.FromMilliseconds(250), DispatcherPriority.Background, (_, _) => Refresh());
+        _timer.Start();
+        L.Player.StateChanged += OnState;
+    }
+
+    /// <summary>The cover large on the left with the transport under it, Up next beside it.</summary>
+    private void BuildClassic(Grid times)
+    {
         var root = new FocusList(horizontal: true);
         var transport = new FocusList(horizontal: true);
         root.Add(transport);
@@ -68,22 +80,101 @@ public sealed class NowPlayingScreen : Screen
             Ui.H(26, _shuffle, prev, play, next, _repeat).Align(HorizontalAlignment.Center, VerticalAlignment.Top));
         left.Width = 640;
 
-        var queueFocus = root.Add(new FocusList(horizontal: false));
+        root.Add(_queueFocus);
         var right = Ui.V(18, Ui.Header("Up next", T.Heading),
             new ScrollViewer { Content = _queue, VerticalScrollBarVisibility = ScrollBarVisibility.Hidden, Height = 760 });
         var grid = Ui.Grid("Auto,*", "*");
         grid.Children.Add(left.Margin(130, 90, 70, 0).Col(0));
         grid.Children.Add(right.Margin(40, 110, 96, 0).Col(1));
         Children.Add(grid);
-        _queueFocus = queueFocus;
         UseScope(root);
-        Refresh();
-        _timer = new DispatcherTimer(TimeSpan.FromMilliseconds(250), DispatcherPriority.Background, (_, _) => Refresh());
-        _timer.Start();
-        L.Player.StateChanged += OnState;
     }
 
     private readonly FocusList _queueFocus;
+    private readonly bool _car = CarPlay.On;
+
+    /// <summary>CarPlay's Now Playing: a bar with Back and the title, the cover on the left,
+    /// and beside it the song, the progress, plain transport glyphs, and a row of small
+    /// buttons (shuffle, Up Next, repeat). Up Next opens as a list.</summary>
+    private void BuildCar(Grid times)
+    {
+        _cover.Width = _cover.Height = 600;
+        _cover.CornerRadius = new CornerRadius(18);
+        _title.FontSize = 50;
+        _title.FontWeight = FontWeight.Bold;
+        _title.TextWrapping = TextWrapping.Wrap;
+        _title.MaxHeight = 130;
+        _artist.Foreground = T.TextMuted;
+
+        Card Glyph(string icon, double size, double glyph, Action run)
+        {
+            var card = new Card(Icons.Make(icon, glyph, T.Text).Align(HorizontalAlignment.Center, VerticalAlignment.Center), 22)
+            {
+                Width = size, Height = size, FocusScale = 1.0, ShowGlow = false, VerticalAlignment = VerticalAlignment.Center,
+            };
+            card.Body.Background = Brushes.Transparent;
+            card.Focused += f => card.Body.Background = f ? T.Surface : Brushes.Transparent;
+            card.Item.Activate = run;
+            return card;
+        }
+
+        var transport = new FocusList(horizontal: true);
+        var prev = Glyph("previous", 130, 58, () => Playback.PlayPrevious());
+        var play = Glyph("pause", 150, 72, () => { L.Player.TogglePause(); Refresh(); });
+        _playIcon.Content = Icons.Make("pause", 72, T.Text);
+        play.Content = _playIcon.Align(HorizontalAlignment.Center, VerticalAlignment.Center);
+        var next = Glyph("next", 130, 58, () => Playback.PlayNext());
+        foreach (var b in new[] { prev, play, next }) transport.Add(b.Item);
+        transport.Index = 1;
+
+        var small = new FocusList(horizontal: true);
+        _shuffle = Glyph("shuffle", 96, 40, () => { L.Queue.Shuffle = !L.Queue.Shuffle; Refresh(); });
+        var upNext = Glyph("list", 96, 40, ShowUpNext);
+        _repeat = Glyph("repeat", 96, 40, () => { L.Queue.Repeat = (RepeatMode)(((int)L.Queue.Repeat + 1) % 3); Refresh(); });
+        foreach (var b in new[] { _shuffle, upNext, _repeat }) small.Add(b.Item);
+        small.Index = 1;
+
+        var root = new FocusList(horizontal: false);
+        root.Add(transport);
+        root.Add(small);
+
+        var bar = Ui.Grid("*,Auto,*", "Auto");
+        bar.Children.Add(Ui.H(6, Icons.Make("back", 30, T.Accent), Ui.Text("Back", T.Body, T.Accent, FontWeight.Medium)).Align(HorizontalAlignment.Left, VerticalAlignment.Center).Col(0));
+        bar.Children.Add(Ui.Text("Now Playing", T.Heading, T.Text, FontWeight.Bold).Col(1));
+
+        _track.Height = 10;
+        var right = Ui.V(0,
+            _title,
+            _artist.Margin(0, 10, 0, 0),
+            Ui.V(12, _track, times).Margin(0, 44, 0, 0),
+            Ui.H(46, prev, play, next).Align(HorizontalAlignment.Center, VerticalAlignment.Top).Margin(0, 30, 0, 0),
+            Ui.H(90, _shuffle, upNext, _repeat).Align(HorizontalAlignment.Center, VerticalAlignment.Top).Margin(0, 14, 0, 0));
+        right.VerticalAlignment = VerticalAlignment.Center;
+
+        var body = Ui.Grid("Auto,*", "*");
+        body.Children.Add(_cover.Align(HorizontalAlignment.Left, VerticalAlignment.Center).Col(0));
+        body.Children.Add(right.Margin(80, 0, 0, 0).Col(1));
+        var grid = Ui.Grid("*", "Auto,*");
+        grid.Children.Add(bar.Margin(48, 34, 48, 0).Row(0));
+        grid.Children.Add(body.Margin(90, 10, 100, 60).Row(1));
+        Children.Add(grid);
+        UseScope(root);
+    }
+
+    /// <summary>Up Next as a list over Now Playing: choosing a song plays it.</summary>
+    private void ShowUpNext()
+    {
+        var items = L.Queue.Items;
+        if (items.Count == 0) { L.Window.Toast("Nothing is queued.", "list"); return; }
+        var entries = items.Select((path, i) =>
+        {
+            var item = L.Library.Get(path);
+            var current = i == L.Queue.Index;
+            return new MenuEntry(item?.Title ?? Path.GetFileNameWithoutExtension(path), current ? "audio" : "music",
+                () => { L.Queue.Jump(i); Playback.StartAudio(path); }, item?.Artist, Checked: current);
+        }).ToList();
+        L.Window.Menu("Up Next", entries);
+    }
 
     private static Card Button(string icon, Action run, bool big = false)
     {
@@ -125,6 +216,14 @@ public sealed class NowPlayingScreen : Screen
         _elapsed.Text = Ui.Time(pos);
         _remaining.Text = dur > 0 ? "-" + Ui.Time(dur - pos) : "";
         _fill.Width = _track.Bounds.Width * (dur > 0 ? Math.Clamp(pos / dur, 0, 1) : 0);
+        if (_car)
+        {
+            // CarPlay: glyphs on nothing; shuffle and repeat turn blue when on.
+            _playIcon.Content = Icons.Make(p.IsPlaying ? "pause" : "play", 72, T.Text);
+            if (_shuffle is not null) _shuffle.Content = Icons.Make("shuffle", 40, L.Queue.Shuffle ? T.Accent : T.Text).Align(HorizontalAlignment.Center, VerticalAlignment.Center);
+            if (_repeat is not null) _repeat.Content = Icons.Make("repeat", 40, L.Queue.Repeat != RepeatMode.Off ? T.Accent : T.Text).Align(HorizontalAlignment.Center, VerticalAlignment.Center);
+            return;
+        }
         _playIcon.Content = Icons.Make(p.IsPlaying ? "pause" : "play", 44, T.Bg0);
         if (_shuffle is not null) _shuffle.Body.Background = L.Queue.Shuffle ? T.WithAlpha(T.AccentColor, 0.6) : T.Surface;
         if (_repeat is not null) _repeat.Body.Background = L.Queue.Repeat != RepeatMode.Off ? T.WithAlpha(T.AccentColor, 0.6) : T.Surface;
@@ -177,10 +276,10 @@ public sealed class NowPlayingScreen : Screen
             case Act.PlayPause: return base.Handle(e with { Action = Act.Accept });
             case Act.NextItem: Playback.PlayNext(); return true;
             case Act.PrevItem: Playback.PlayPrevious(); return true;
+            // B (Stop in the player's keymap) leaves: while music plays, it asks whether to
+            // keep it playing in the background. Stop in the View menu always stops.
             case Act.Stop:
-                L.Player.Close();
-                L.Window.Pop();
-                return true;
+                return OnBack();
             case Act.ContextMenu:
                 L.Window.Menu("Music",
                 [
@@ -197,6 +296,33 @@ public sealed class NowPlayingScreen : Screen
             Act.SkipBack => Act.Left, Act.SkipForward => Act.Right, Act.BigSkipForward => Act.Up, Act.BigSkipBack => Act.Down, _ => e.Action,
         };
         return base.Handle(e with { Action = mapped == Act.Stop ? Act.Back : mapped });
+    }
+
+    /// <summary>B while music plays: keep it playing in the background, or stop it. The
+    /// Audio setting can answer for good; B on the question keeps the music and leaves.</summary>
+    protected override bool OnBack()
+    {
+        if (!L.Player.IsPlaying || L.NowPlayingKind != MediaKind.Audio) return base.OnBack();
+        switch (L.Settings.String(K.MusicOnLeave))
+        {
+            case "keep":
+                L.Window.Toast("The music keeps playing.", "music", 2);
+                return base.OnBack();
+            case "stop":
+                L.Player.Close();
+                return base.OnBack();
+        }
+        L.Window.Ask("Keep the music playing?",
+            "It can play on in the background while you look around Lounge. Change what happens here in Settings > Audio.",
+            ["Keep playing", "Stop the music"], 0, i =>
+            {
+                if (i < 0 || L.Window.Top != this) return;
+                if (i == 1) L.Player.Close();
+                else L.Window.Toast(CarPlay.On ? "The music keeps playing. It's in the sidebar." : "The music keeps playing. It shows in the corner.", "music", 2.5);
+                L.Play(UiSound.Back);
+                L.Window.Pop();
+            }, "music");
+        return true;
     }
 
     public override void OnHidden() => L.Window.Backdrop.SetArt(null);

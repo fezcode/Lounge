@@ -27,12 +27,35 @@ public abstract class BrowseScreen : Screen
     {
         Heading = Ui.Header(title, T.Title);
         var grid = Ui.Grid("*", "Auto,*,Auto");
-        grid.Children.Add(Ui.V(6, Heading, Sub).Margin(96, 60, 96, 20).Row(0));
+        if (CarPlay.On)
+        {
+            // CarPlay's navigation bar: Back in blue on the left, the title in the middle.
+            Heading.FontSize = T.Heading;
+            Sub.FontSize = T.Caption;
+            var bar = Ui.Grid("*,Auto,*", "Auto,Auto,Auto");
+            bar.Children.Add(Ui.H(6, Icons.Make("back", 30, T.Accent), Ui.Text("Back", T.Body, T.Accent, FontWeight.Medium))
+                .Align(HorizontalAlignment.Left, VerticalAlignment.Center).Col(0));
+            bar.Children.Add(Heading.Col(1));
+            bar.Children.Add(Sub.Align(HorizontalAlignment.Center, VerticalAlignment.Top).Margin(0, 4, 0, 0).Col(0, 3).Row(1));
+            grid.Children.Add(bar.Margin(48, 34, 48, 20).Row(0));
+            _underHeading = c => bar.Children.Add(c.Align(HorizontalAlignment.Center, VerticalAlignment.Top).Col(0, 3).Row(2));
+        }
+        else
+        {
+            var head = Ui.V(6, Heading, Sub);
+            grid.Children.Add(head.Margin(96, 60, 96, 20).Row(0));
+            _underHeading = c => head.Children.Add(c);
+        }
         grid.Children.Add(Body.Row(1));
         // X opens a focused item's options, as on Home; View does the same.
         grid.Children.Add(Hints.Bar(Context, (Act.Accept, accept), (Act.Secondary, "Options"), (Act.Tertiary, "Search"), (Act.Back, "Back")).Margin(96, 10, 0, 40).Row(2));
         Children.Add(grid);
     }
+
+    private readonly Action<Control> _underHeading;
+
+    /// <summary>Adds a line under the title (Music's tabs).</summary>
+    protected void AddUnderHeading(Control c) => _underHeading(c);
 
     protected (ScrollViewer View, FocusGrid Focus) Grid(int columns, double itemW, double itemH, double spacing = 34)
     {
@@ -43,7 +66,7 @@ public abstract class BrowseScreen : Screen
     }
 
     protected int Columns(double itemW, double spacing = 34) =>
-        Math.Max(2, (int)((L.Window.DesignWidth - 156) / (itemW + spacing)));
+        Math.Max(2, (int)((L.Window.DesignWidth - L.Window.RailInset - 156) / (itemW + spacing)));
 
     protected override void OnFocusMoved(FocusItem? old, FocusItem? now)
     {
@@ -184,7 +207,7 @@ public sealed class MusicScreen : BrowseScreen
     public MusicScreen() : base("Music")
     {
         Sub.IsVisible = false;
-        ((StackPanel)((Grid)Children[0]).Children[0]).Children.Add(_tabBar.Margin(0, 10, 0, 0));
+        AddUnderHeading(_tabBar.Margin(0, 10, 0, 0));
         Build();
     }
 
@@ -245,8 +268,7 @@ public sealed class MusicScreen : BrowseScreen
             wrap.Children.Add(Ui.V(14, card, Ui.V(2, Ui.Text(a.Name, T.Caption, T.Text, FontWeight.SemiBold).Also(t => t.Width = w), Ui.Muted(a.Artist))));
             focus.Add(card.Item);
         }
-        Body.Content = view;
-        UseScope(focus);
+        Show(view, focus);
     }
 
     private void Artists()
@@ -265,9 +287,8 @@ public sealed class MusicScreen : BrowseScreen
             panel.Children.Add(card);
             list.Add(card.Item);
         }
-        Body.Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Hidden };
-        UseScope(list);
-        if (!list.HasItems) EmptyMusic();
+        if (!list.HasItems) { EmptyMusic(); return; }
+        Show(new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Hidden }, list);
     }
 
     private void Songs()
@@ -293,8 +314,7 @@ public sealed class MusicScreen : BrowseScreen
             panel.Children.Add(card);
             list.Add(card.Item);
         }
-        Body.Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Hidden };
-        UseScope(list);
+        Show(new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Hidden }, list);
     }
 
     private void EmptyMusic()
@@ -302,12 +322,67 @@ public sealed class MusicScreen : BrowseScreen
         var add = new Card(Ui.H(16, Icons.Make("library-add", 34, T.OnAccent), Ui.Text("Add a music folder", T.Body, T.OnAccent, FontWeight.SemiBold)).Margin(36, 20), 40);
         add.Body.Background = T.Accent;
         add.Item.Activate = () => L.Window.Push(new FilesScreen(pickFor: K.MusicRoots));
-        Body.Content = Ui.V(24, Icons.Make("music", 120, T.TextFaint, 1.2), Ui.Muted("No music yet. Add a folder and Lounge will sort it into albums.", T.Body), add)
-            .Margin(96, 120, 96, 0).Align(HorizontalAlignment.Left, VerticalAlignment.Top);
         var list = new FocusList(horizontal: false);
         list.Add(add.Item);
-        UseScope(list);
+        Show(Ui.V(24, Icons.Make("music", 120, T.TextFaint, 1.2), Ui.Muted("No music yet. Add a folder and Lounge will sort it into albums.", T.Body), add)
+            .Margin(96, 120, 96, 0).Align(HorizontalAlignment.Left, VerticalAlignment.Top), list);
     }
+
+    private bool _banner;
+    private TextBlock? _bannerSong;
+    private ContentControl? _bannerArt, _bannerState;
+
+    /// <summary>Puts a tab on screen; while music plays in the background a Now Playing
+    /// bar sits above it (D-pad up reaches it), the way back to the music.</summary>
+    private void Show(Control view, FocusNode focus)
+    {
+        _banner = HomeModel.NowPlaying() is not null;
+        if (!_banner)
+        {
+            _bannerSong = null;
+            Body.Content = view;
+            UseScope(focus);
+            return;
+        }
+        _bannerSong = Ui.Text("", T.Body, T.Text, FontWeight.SemiBold);
+        _bannerArt = new ContentControl();
+        _bannerState = new ContentControl();
+        var row = Ui.Grid("Auto,*,Auto", "Auto");
+        row.Children.Add(_bannerArt.Col(0));
+        row.Children.Add(Ui.V(2, Ui.Text("NOW PLAYING", 20, T.Accent, FontWeight.SemiBold, letterSpacing: 1), _bannerSong).Margin(20, 0, 20, 0).Col(1).Align(HorizontalAlignment.Stretch, VerticalAlignment.Center));
+        row.Children.Add(_bannerState.Col(2).Align(HorizontalAlignment.Right, VerticalAlignment.Center));
+        var banner = new Card(row.Margin(14, 12, 26, 12), 18) { Width = 760, HorizontalAlignment = HorizontalAlignment.Left, FocusScale = 1.02 };
+        banner.Item.Activate = () => HomeModel.NowPlaying()?.Open();
+        UpdateBanner();
+
+        var root = new FocusList(horizontal: false);
+        root.Add(new FocusList(horizontal: true)).Add(banner.Item);
+        root.Add(focus);
+        root.Index = 1;
+        var grid = Ui.Grid("*", "Auto,*");
+        grid.Children.Add(banner.Margin(96, 0, 96, 10).Row(0));
+        grid.Children.Add(view.Row(1));
+        Body.Content = grid;
+        UseScope(root);
+    }
+
+    private void UpdateBanner()
+    {
+        if (_bannerSong is null || _bannerArt is null || _bannerState is null) return;
+        var np = HomeModel.NowPlaying();
+        _bannerSong.Text = np?.Subtitle ?? "";
+        _bannerArt.Content = ImageCache.Art(np?.Art, 64, 64, Icons.Make("music", 30, T.TextMuted)).Also(b => b.CornerRadius = new CornerRadius(10));
+        _bannerState.Content = Icons.Make(L.Player.IsPlaying ? "audio" : "pause", 30, T.TextMuted);
+    }
+
+    /// <summary>Music started, stopped or moved on: the bar comes, goes or follows the song.</summary>
+    public void NowPlayingChanged()
+    {
+        if ((HomeModel.NowPlaying() is not null) != _banner) Build();
+        else UpdateBanner();
+    }
+
+    public override void OnShown() => NowPlayingChanged();
 }
 
 /// <summary>An album: big cover, play and shuffle, and the track list.</summary>

@@ -229,6 +229,64 @@ public sealed class Backdrop : Grid
                 _animate = t => { pixels.Draw(t); image.InvalidateVisual(); };
                 break;
             }
+            case BackdropStyle.Drive:
+            {
+                // Broad soft-edged bands of colour laid diagonally over black, each fading in
+                // and out across its width, drifting very slowly like lights on glass.
+                var bands = new[] { (a, -260.0, 0.0), (b, 220.0, 1.7), (c, 640.0, 3.1) }.Select(x =>
+                {
+                    var (col, y, phase) = x;
+                    var band = new Border
+                    {
+                        Width = 3600, Height = 520,
+                        IsHitTestVisible = false,
+                        Background = new LinearGradientBrush
+                        {
+                            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                            EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
+                            GradientStops =
+                            {
+                                new GradientStop(Color.FromArgb(0, col.R, col.G, col.B), 0),
+                                new GradientStop(Color.FromArgb(150, col.R, col.G, col.B), 0.5),
+                                new GradientStop(Color.FromArgb(0, col.R, col.G, col.B), 1),
+                            },
+                        },
+                    };
+                    var move = new TranslateTransform(-800, y);
+                    band.RenderTransform = new TransformGroup { Children = { new RotateTransform(-14), move } };
+                    band.RenderTransformOrigin = new RelativePoint(0, 0, RelativeUnit.Relative);
+                    return (band, move, y, phase);
+                }).ToArray();
+                var canvas = new Canvas { IsHitTestVisible = false };
+                foreach (var (band, _, _, _) in bands) canvas.Children.Add(band);
+                _scene.Children.Add(canvas);
+                // The top and the bottom stay black, where the bar and the dots sit.
+                _scene.Children.Add(new Border
+                {
+                    IsHitTestVisible = false,
+                    Background = new LinearGradientBrush
+                    {
+                        StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                        EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
+                        GradientStops =
+                        {
+                            new GradientStop(Color.FromArgb(150, 0, 0, 0), 0),
+                            new GradientStop(Color.FromArgb(0, 0, 0, 0), 0.3),
+                            new GradientStop(Color.FromArgb(0, 0, 0, 0), 0.7),
+                            new GradientStop(Color.FromArgb(170, 0, 0, 0), 1),
+                        },
+                    },
+                });
+                _animate = t =>
+                {
+                    foreach (var (_, move, y, phase) in bands)
+                    {
+                        move.X = -800 + 160 * Math.Sin(t * 0.05 + phase);
+                        move.Y = y + 40 * Math.Sin(t * 0.07 + phase * 1.3);
+                    }
+                };
+                break;
+            }
         }
 
         _scrim.Background = new LinearGradientBrush

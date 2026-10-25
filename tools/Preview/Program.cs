@@ -79,12 +79,22 @@ internal static class Program
                 return 0;
             }
 
-            foreach (var theme in Core.Themes.Themes.All)
+            // --theme <id> renders just that theme.
+            var only = args.SkipWhile(a => a != "--theme").Skip(1).FirstOrDefault();
+            foreach (var theme in Core.Themes.Themes.All.Where(x => only is null || x.Id == only))
             {
                 L.Settings.Set(K.Theme, theme.Id);
                 _window.ApplyTheme(rebuild: true);
                 var t = theme.Id;
                 Shot($"{t}-home");
+                if (t == "carplay")
+                {
+                    CarPlay.Dashboard = true;
+                    _window.Find<HomeScreen>()!.Rebuild();
+                    Shot("carplay-dashboard");
+                    CarPlay.Dashboard = false;
+                    _window.Find<HomeScreen>()!.Rebuild();
+                }
                 _window.OpenSettings("Appearance");
                 Shot($"{t}-settings");
                 _window.CloseOverlays();
@@ -127,7 +137,7 @@ internal static class Program
                 Pump(10);
             }
 
-            RenderBanner();
+            if (only is null) RenderBanner();
             Console.WriteLine($"Previews written to {_out}");
             return 0;
         }

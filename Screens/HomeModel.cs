@@ -44,6 +44,22 @@ public static class HomeModel
         new("Power", "Leave, sleep or shut down", null, "power", "#636366", Launcher.ShowPowerMenu),
     ];
 
+    /// <summary>Music playing in the background, as a way back to Now Playing; null when
+    /// no music is on.</summary>
+    public static HomeEntry? NowPlaying()
+    {
+        if (!CarPlay.MusicOn) return null;
+        var art = L.Player.Path is { } path ? L.Library.Get(path)?.Art : null;
+        return new HomeEntry("Now Playing", Playback.NowPlayingLine(), art, "audio", "#FF375F", () =>
+        {
+            if (L.Window.Top is not NowPlayingScreen) L.Window.Push(new NowPlayingScreen());
+        });
+    }
+
+    /// <summary>The destinations as a home menu shows them: Now Playing first while music
+    /// plays in the background.</summary>
+    public static IReadOnlyList<HomeEntry> Menu() => NowPlaying() is { } np ? [np, .. Destinations()] : Destinations();
+
     public static IReadOnlyList<HomeSection> Sections()
     {
         var s = L.Settings;

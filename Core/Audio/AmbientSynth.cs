@@ -57,6 +57,11 @@ public sealed class AmbientSynth
         ["arcade"] = new("arcade", "Arcade",
             [[45, 57, 60, 64], [41, 53, 57, 60], [48, 55, 60, 64], [43, 55, 59, 62]],
             4.0, 0.06, 0.5, 8, 2.6, 0.07, 0.22, [69, 72, 74, 76, 79, 81, 84, 86], 0.5, 0.22, Chip: true),
+        // A parlour music box: a quiet string bed turning I-vi-ii-V in E-flat with a slow
+        // waltz swell, and quick, bright, short-ringing tines picked from high in the key.
+        ["carplay"] = new("carplay", "Motorcar Recital",
+            [[39, 51, 55, 58, 63], [36, 48, 55, 60, 63], [41, 53, 56, 60, 65], [34, 46, 53, 58, 62]],
+            5.0, 0.07, 0.3, 4, 2.2, 0.11, 0.9, [79, 82, 84, 86, 87, 89, 91, 94, 96, 98], 0.85, 0.36, 0.6),
     };
 
     private readonly AmbientPreset _p;

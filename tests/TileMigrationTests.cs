@@ -45,4 +45,28 @@ public class TileMigrationTests
         store.Remove("browser");
         Assert.Null(new TileStore(path).Find("browser"));
     }
+
+    [Fact]
+    public void Tiles_from_the_dropped_development_build_go_once()
+    {
+        using var dir = new TempDir();
+        var path = dir.File("tiles.json");
+        // A development 1.0.23 setup: Bellringer and Lamplighter after Starfall, Spotify after Twitch.
+        var saved = TileStore.Defaults();
+        saved.Insert(saved.FindIndex(t => t.Id == "twitch") + 1,
+            new Tile { Id = "spotify", Kind = TileKind.Web, Name = "Spotify", Target = "https://open.spotify.com/", AllowMouse = true, Logo = "spotify" });
+        var at = saved.FindIndex(t => t.Id == "starfall") + 1;
+        saved.Insert(at, new Tile { Id = "lamplighter", Kind = TileKind.Builtin, Name = "Lamplighter", Target = "lamplighter", IsGame = true });
+        saved.Insert(at, new Tile { Id = "bellringer", Kind = TileKind.Builtin, Name = "Bellringer", Target = "bellringer", IsGame = true });
+        var json = new System.Text.Json.JsonSerializerOptions { Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() } };
+        File.WriteAllText(path, System.Text.Json.JsonSerializer.Serialize(saved, json));
+        File.WriteAllLines(Path.ChangeExtension(path, ".migrations"), ["logos", "prime-inside", "hbomax", "starfall", "hellgate-gone", "browser", "bells-and-lamps", "spotify", "spotify-logo"]);
+
+        var store = new TileStore(path);
+        Assert.DoesNotContain(store.All, t => t.Target is "bellringer" or "lamplighter");
+        Assert.Null(store.Find("spotify"));
+        Assert.NotNull(store.Find("starfall"));
+        Assert.NotNull(store.Find("twitch"));
+        Assert.DoesNotContain(TileStore.Defaults(), t => t.Id == "spotify");
+    }
 }

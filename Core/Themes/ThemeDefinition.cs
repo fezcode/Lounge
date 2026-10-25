@@ -20,13 +20,18 @@ public enum HomeLayout
     /// <summary>Arcade: a cabinet's game-select screen. A pixel marquee, the destinations as
     /// an uppercase menu with a blinking cursor, the focused one's line-up beside it.</summary>
     Cabinet,
+    /// <summary>CarPlay: a status sidebar down the left (the time, recent apps, the Home
+    /// button), app icons in pages of two rows with page dots, and a Dashboard of widgets
+    /// one press away.</summary>
+    Dock,
 }
 
 /// <summary>A procedural default backdrop, so themes need no shipped wallpapers. Projector:
 /// a warm cone of light with flicker, film grain and a vignette. Pixel: a low-resolution
 /// pixel-art scene (dithered sky, stars, a striped sun, parallax mountains, a scrolling grid)
-/// scaled up without smoothing, under CRT scanlines.</summary>
-public enum BackdropStyle { Aurora, Sunset, Fanart, Waves, Glow, Projector, Pixel }
+/// scaled up without smoothing, under CRT scanlines. Drive: a car display's wallpaper,
+/// black with broad bands of colour sweeping across it.</summary>
+public enum BackdropStyle { Aurora, Sunset, Fanart, Waves, Glow, Projector, Pixel, Drive }
 
 /// <summary>Everything a theme decides. Colours are #RRGGBB or #AARRGGBB strings so Core
 /// stays free of Avalonia; the Shell turns them into brushes.</summary>
@@ -178,7 +183,22 @@ public static class Themes
         AmbientPreset = "arcade", SoundSet = "arcade",
     };
 
-    public static readonly IReadOnlyList<ThemeDefinition> All = [Aurora, LivingRoom, Kodi, ConsoleOne, Series, ScreeningRoom, Arcade];
+    /// <summary>A car's dashboard display: true black, the system's dark greys and blue,
+    /// rounded icons, a status sidebar, crisp quiet clicks.</summary>
+    public static readonly ThemeDefinition CarPlay = new()
+    {
+        Id = "carplay", Name = "Motorcar Recital", Layout = HomeLayout.Dock, Backdrop = BackdropStyle.Drive,
+        Bg0 = "#000000", Bg1 = "#000000",
+        BackdropA = "#0A3D91", BackdropB = "#5E2BB8", BackdropC = "#0C7FA8",
+        Surface = "#2C2C2E", SurfaceStrong = "#F21C1C1E", Line = "#38545458",
+        Text = "#FFFFFF", TextMuted = "#99EBEBF5", TextFaint = "#4DEBEBF5",
+        Accent = "#0A84FF", OnAccent = "#FFFFFF", Focus = "#FFFFFF",
+        Radius = 16, RadiusLarge = 26, FocusScale = 1.04, SpringStiffness = 520, SpringDamping = 34,
+        TitleWeight = 700,
+        AmbientPreset = "carplay", SoundSet = "carplay",
+    };
+
+    public static readonly IReadOnlyList<ThemeDefinition> All = [Aurora, LivingRoom, Kodi, ConsoleOne, Series, ScreeningRoom, Arcade, CarPlay];
 
     public static ThemeDefinition Get(string id) => All.FirstOrDefault(t => t.Id == id) ?? Aurora;
 }

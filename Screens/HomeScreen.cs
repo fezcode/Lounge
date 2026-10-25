@@ -36,8 +36,12 @@ public sealed class HomeScreen : Screen
 
     public override void OnClosed() => LibraryService.Updated -= OnLibraryUpdated;
 
-    // Nothing blinks behind another screen (coming back rebuilds the view and its timer).
-    public override void OnHidden() => _blink?.Stop();
+    // Nothing blinks or ticks behind another screen (coming back rebuilds the view and its timers).
+    public override void OnHidden()
+    {
+        _blink?.Stop();
+        _carTimer?.Stop();
+    }
 
     private bool _shownOnce;
 
@@ -69,6 +73,9 @@ public sealed class HomeScreen : Screen
         _kodiShown = null;
         _programmeShown = null;
         _heroTitle = _heroSubtitle = null;
+        _carPage.Clear();
+        _carTimer?.Stop();
+        _carTimer = null;
         var (content, root) = T.Def.Layout switch
         {
             HomeLayout.BottomRibbon => LivingRoom(),
@@ -77,6 +84,7 @@ public sealed class HomeScreen : Screen
             HomeLayout.TileGrid => Series(),
             HomeLayout.Programme => Programme(),
             HomeLayout.Cabinet => Cabinet(),
+            HomeLayout.Dock => Dock(),
             _ => Aurora(),
         };
         _building = false;
@@ -87,6 +95,8 @@ public sealed class HomeScreen : Screen
         else if (_fallbackFocus is not null)
             FocusItem(_fallbackFocus);
         UpdateHero(Focused);
+        ShowCarPage(Focused, snap: true);
+        _carTimer?.Start();
     }
 
     // ------------------------------------------------------------------ shared pieces
@@ -155,13 +165,19 @@ public sealed class HomeScreen : Screen
 
     private Control HintBar() => Hints.Bar("Shell", (Act.Accept, "Open"), (Act.Secondary, "Options"), (Act.Settings, "Settings"), (Act.Home, "Home"));
 
-    protected override void OnFocusMoved(FocusItem? old, FocusItem? now) => UpdateHero(now);
+    protected override void OnFocusMoved(FocusItem? old, FocusItem? now)
+    {
+        UpdateHero(now);
+        ShowCarPage(now, snap: false);
+    }
 
     private void UpdateHero(FocusItem? now)
     {
         if (now is null || !_entries.TryGetValue(now, out var e)) return;
         if (_heroTitle is not null) _heroTitle.Text = e.Title;
         if (_heroSubtitle is not null) _heroSubtitle.Text = e.Subtitle ?? "";
+        // CarPlay's wallpaper stays put; focus only lights the icon.
+        if (T.Def.Layout == HomeLayout.Dock) { L.Window.Backdrop.SetArt(null); return; }
         var art = e.Tile is null ? e.Backdrop ?? e.Art ?? e.Video?.Art : null;
         L.Window.Backdrop.SetArt(art, blur: T.Def.Layout != HomeLayout.TopTabsHero, strength: T.Def.Layout == HomeLayout.TopTabsHero ? 0.95 : 0.6);
     }
@@ -175,8 +191,9 @@ public sealed class HomeScreen : Screen
 
         // Tabs
         var tabsFocus = root.Add(new FocusList(horizontal: true, rememberIndex: false));
-        var tabs = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Margin = new Thickness(96, 44, 0, 0) };
-        foreach (var d in HomeModel.Destinations())
+        // The right margin keeps the tabs clear of the clock in the corner.
+        var tabs = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Margin = new Thickness(96, 44, 260, 0) };
+        foreach (var d in HomeModel.Menu())
         {
             var label = Ui.Text(d.Title, T.Body, T.TextMuted, FontWeight.SemiBold);
             var card = new Card(label.Margin(26, 12), 30) { FocusScale = 1.06, ShowRing = false };
@@ -239,7 +256,7 @@ public sealed class HomeScreen : Screen
         var ribbon = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 22, Margin = new Thickness(110, 26, 110, 26) };
         var ribbonEntries = new List<(HomeEntry Entry, string? Section)>();
         if (sections.TryGetValue("jump", out var jump)) ribbonEntries.Add((new HomeEntry("Continue", "Jump back in", null, "clock", "#5E5CE6", () => jump.Entries[0].Open()), "jump"));
-        foreach (var d in HomeModel.Destinations())
+        foreach (var d in HomeModel.Menu())
         {
             var sid = d.Title switch { "Videos" => "videos", "Music" => "music", "Apps & Games" => "apps", "Web" => "web", _ => null };
             ribbonEntries.Add((d, sid));
@@ -312,7 +329,7 @@ public sealed class HomeScreen : Screen
         var menu = new StackPanel { Spacing = 4, Margin = new Thickness(0, 150, 0, 0) };
         var contentHost = new ContentControl();
         var contentFocus = root.Add(new FocusList(horizontal: false, rememberIndex: false));
-        foreach (var d in HomeModel.Destinations())
+        foreach (var d in HomeModel.Menu())
         {
             var sid = d.Title switch { "Videos" => "videos", "Music" => "music", "Apps & Games" => "apps", "Web" => "web", _ => null };
             var label = Ui.Text(T.Header(d.Title), 40, T.TextMuted, FontWeight.SemiBold, letterSpacing: 2);
@@ -395,6 +412,7 @@ public sealed class HomeScreen : Screen
         var iconFocus = root.Add(new FocusList(horizontal: true));
         var icons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 22, Margin = new Thickness(110, 110, 110, 0) };
         var top = new List<HomeEntry>();
+        if (HomeModel.NowPlaying() is { } playing) top.Add(playing);
         top.AddRange(sections.GetValueOrDefault("jump")?.Entries.Take(3) ?? []);
         top.AddRange(HomeModel.Destinations().Take(5));
         top.AddRange(HomeModel.Apps(web: false).Where(a => a.Tile is not null));
@@ -491,7 +509,7 @@ public sealed class HomeScreen : Screen
         }
 
         // Pins: the destinations as a row of wide tiles.
-        var dest = new HomeSection("dest", "My stuff", "apps", HomeModel.Destinations(), EntryShape.Wide);
+        var dest = new HomeSection("dest", "My stuff", "apps", HomeModel.Menu(), EntryShape.Wide);
         var (dview, dfocus) = Row(dest, 300, 120, captionsBelow: false, inside: true, headerSize: T.Body, spacing: 14);
         stack.Children.Add(dview);
         root.Add(dfocus);
@@ -530,7 +548,7 @@ public sealed class HomeScreen : Screen
         var featureHost = new ContentControl();
         var featureFocus = root.Add(new FocusList(horizontal: false, rememberIndex: false));
         var number = 0;
-        foreach (var d in HomeModel.Destinations())
+        foreach (var d in HomeModel.Menu())
         {
             number++;
             var sid = d.Title switch { "Videos" => "videos", "Music" => "music", "Apps & Games" => "apps", "Web" => "web", _ => null };
@@ -611,7 +629,10 @@ public sealed class HomeScreen : Screen
         _programmeShown = dest.Title;
         foreach (var item in focus.Items.ToList()) _entries.Remove(item);
         focus.Clear();
-        var stack = new StackPanel { Spacing = 6, Margin = new Thickness(0, 40, 0, 0) };
+        // The list reaches 40 px left of its column so the first card's ring and glow aren't
+        // clipped at the column's edge; the content moves back by the same amount.
+        const double bleed = 40;
+        var stack = new StackPanel { Spacing = 6, Margin = new Thickness(bleed, 40, 0, 0) };
 
         void AddRow(HomeSection s, string label, double w, double h)
         {
@@ -642,7 +663,11 @@ public sealed class HomeScreen : Screen
             card.Margin = new Thickness(0, 120, 96, 0);
             stack.Children.Add(card);
         }
-        host.Content = new ScrollViewer { Content = stack, VerticalScrollBarVisibility = ScrollBarVisibility.Hidden, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        host.Content = new ScrollViewer
+        {
+            Content = stack, Margin = new Thickness(-bleed, 0, 0, 0),
+            VerticalScrollBarVisibility = ScrollBarVisibility.Hidden, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        };
         if (!_building) RefreshFocus();
     }
 
@@ -689,8 +714,8 @@ public sealed class HomeScreen : Screen
         var lineupHost = new ContentControl();
         var lineupFocus = root.Add(new FocusList(horizontal: false, rememberIndex: false));
         Control? activeCursor = null;
-        var destinations = HomeModel.Destinations();
-        var reopen = destinations.FirstOrDefault(x => x.Title == _cabinetDest) ?? destinations[0];
+        var destinations = HomeModel.Menu();
+        var reopen = destinations.FirstOrDefault(x => x.Title == (_cabinetDest ?? "Videos")) ?? destinations[0];
         foreach (var d in destinations)
         {
             var sid = d.Title switch { "Videos" => "videos", "Music" => "music", "Apps & Games" => "apps", "Web" => "web", _ => null };
@@ -752,6 +777,277 @@ public sealed class HomeScreen : Screen
         Data = Geometry.Parse("M0,0 H2 V1 H3 V2 H4 V3 H5 V5 H4 V6 H3 V7 H2 V8 H0 Z"), Fill = brush,
         Width = height * 5 / 8, Height = height, Stretch = Stretch.Fill, VerticalAlignment = VerticalAlignment.Center,
     };
+
+    // ------------------------------------------------------------------ CarPlay (dock)
+
+    private const string RailKey = "rail:";
+    private readonly Dictionary<FocusItem, int> _carPage = new();
+    private TranslateTransform? _pageShift;
+    private Spring? _pageSpring;
+    private StackPanel? _dots;
+    private double _pageWidth;
+    private int _page = -1;
+    private FocusItem? _carFirst;
+    /// <summary>Refreshes the Dashboard's Now Playing while Home is up.</summary>
+    private DispatcherTimer? _carTimer;
+
+    /// <summary>CarPlay: the status sidebar on the left (focusable here: its recent apps,
+    /// and the Home button that switches between the app pages and the Dashboard), and
+    /// beside it either the app icons in pages of two rows, or the Dashboard.</summary>
+    private (Control, FocusNode) Dock()
+    {
+        var grid = Ui.Grid($"{CarPlay.RailWidth},*", "*");
+        var root = new FocusList(horizontal: true);
+        var railFocus = root.Add(new FocusList(horizontal: false, rememberIndex: true));
+        var railEntries = new Dictionary<FocusItem, HomeEntry>();
+        Card? homeButton = null;
+        grid.Children.Add(CarPlay.Rail(onHome: true, railFocus, ToggleDashboard, railEntries, c => homeButton = c).Col(0));
+        // Sidebar entries restore focus by their own key: "Music" is in the sidebar and on the pages.
+        foreach (var (item, e) in railEntries) _entries[item] = e with { Title = RailKey + e.Title };
+        _entries[homeButton!.Item] = new HomeEntry(RailKey + "home", null, null, "home", "#3A3A3C", ToggleDashboard);
+
+        _carFirst = null;
+        var content = CarPlay.Dashboard ? DockDashboard(root) : DockPages(root);
+        grid.Children.Add(content.Col(1));
+        root.Index = 1;
+        return (grid, root);
+    }
+
+    private void ToggleDashboard()
+    {
+        CarPlay.Dashboard = !CarPlay.Dashboard;
+        L.Play(Lounge.Core.Audio.UiSound.Open);
+        Rebuild();
+    }
+
+    /// <summary>The app pages: icons with their names under them, five across and two
+    /// down, page dots beneath. Moving past the last column slides to the next page.</summary>
+    private Control DockPages(FocusList root)
+    {
+        var apps = CarPlay.Apps();
+        _pageWidth = Math.Max(800, L.Window.DesignWidth - CarPlay.RailWidth);
+        var height = L.Window.DesignHeight - 110;
+        var cols = _pageWidth >= 1500 ? 5 : 4;
+        const int rows = 2;
+        const double icon = 188;
+        var perPage = cols * rows;
+        var pageCount = Math.Max(1, (apps.Count + perPage - 1) / perPage);
+        var focus = root.Add(new FocusSpatial());
+        var strip = new StackPanel { Orientation = Orientation.Horizontal };
+        _pageShift = new TranslateTransform();
+        strip.RenderTransform = _pageShift;
+        _pageSpring = new Spring(0, v => { if (_pageShift is not null) _pageShift.X = v; }, 300, 30);
+        _page = -1;
+        for (int p = 0; p < pageCount; p++)
+        {
+            var page = new Grid { Width = _pageWidth, Height = height, RowDefinitions = new RowDefinitions("*,*") };
+            for (int c = 0; c < cols; c++) page.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
+            for (int i = 0; i < perPage && p * perPage + i < apps.Count; i++)
+            {
+                var e = apps[p * perPage + i];
+                var card = CarPlay.IconCard(CarPlay.Icon(e, icon), icon);
+                card.Item.Activate = e.Open;
+                card.Item.Secondary = e.Options;
+                _entries[card.Item] = e;
+                _carPage[card.Item] = p;
+                _carFirst ??= card.Item;
+                var label = Ui.Text(e.Title, 26, T.Text, FontWeight.Medium);
+                label.TextAlignment = TextAlignment.Center;
+                label.Width = _pageWidth / cols - 24;
+                var cell = Ui.V(10, card.Align(HorizontalAlignment.Center, VerticalAlignment.Top), label);
+                var row = i / cols;
+                cell.HorizontalAlignment = HorizontalAlignment.Center;
+                cell.VerticalAlignment = row == 0 ? VerticalAlignment.Bottom : VerticalAlignment.Top;
+                cell.Margin = new Thickness(0, row == 0 ? 0 : 26, 0, row == 0 ? 26 : 0);
+                page.Children.Add(cell.Col(i % cols).Row(row));
+                focus.Add(card.Item);
+            }
+            strip.Children.Add(page);
+        }
+        // A canvas lets the strip run past the edge; only the current page shows.
+        var window = new Canvas { ClipToBounds = true, Children = { strip } };
+        _dots = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 16, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        for (int p = 0; p < pageCount; p++) _dots.Children.Add(new Border { Width = 14, Height = 14, CornerRadius = new CornerRadius(7) });
+        _dots.IsVisible = pageCount > 1;
+        var layout = Ui.Grid("*", "*,110");
+        layout.Children.Add(window.Row(0));
+        layout.Children.Add(_dots.Row(1));
+        return layout;
+    }
+
+    /// <summary>Slides to the page holding the focused icon and lights its dot.</summary>
+    private void ShowCarPage(FocusItem? now, bool snap)
+    {
+        if (now is null || !_carPage.TryGetValue(now, out var page) || page == _page) return;
+        _page = page;
+        var x = -page * _pageWidth;
+        if (snap) _pageSpring?.Snap(x); else _pageSpring?.To(x);
+        if (_dots is null) return;
+        for (int i = 0; i < _dots.Children.Count; i++)
+            ((Border)_dots.Children[i]).Background = i == page ? Brushes.White : new SolidColorBrush(Color.FromArgb(90, 255, 255, 255));
+    }
+
+    /// <summary>The Dashboard: a large card for what to watch, and beside it Now Playing
+    /// and today's card, all one press from the app pages.</summary>
+    private Control DockDashboard(FocusList root)
+    {
+        var focus = root.Add(new FocusSpatial());
+        const double pad = 26, gap = 22;
+        var w = Math.Max(800, L.Window.DesignWidth - CarPlay.RailWidth) - pad * 2;
+        var h = L.Window.DesignHeight - pad * 2;
+        var bigW = Math.Round((w - gap) * 0.6);
+        var smallW = w - gap - bigW;
+        var smallH = (h - gap) / 2;
+        var grid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions($"{bigW},{gap},{smallW}"),
+            RowDefinitions = new RowDefinitions($"{smallH},{gap},{smallH}"),
+            Margin = new Thickness(pad),
+        };
+
+        // What to watch: the newest thing to resume, else the newest video, else Videos.
+        var sections = HomeModel.Sections().ToDictionary(s => s.Id);
+        var (label, watch) = sections.GetValueOrDefault("jump")?.Entries.FirstOrDefault() is { } j ? ("JUMP BACK IN", j)
+            : sections.GetValueOrDefault("videos")?.Entries.FirstOrDefault(e => e.Video is not null || e.Art is not null) is { } v ? ("RECENTLY ADDED", v)
+            : ("VIDEOS", HomeModel.Destinations()[0]);
+        watch = CarPlay.Noted(watch);
+        var big = new Grid();
+        big.Children.Add(HomeModel.Art(watch, bigW, h));
+        big.Children.Add(new Border { Background = Ui.VerticalFade(Colors.Black, 0, 0.85, 0.35, 1), IsHitTestVisible = false });
+        var caption = Ui.V(6,
+            Ui.Text(label, 22, T.TextMuted, FontWeight.SemiBold, letterSpacing: 1),
+            Ui.Text(watch.Title, 52, Brushes.White, FontWeight.Bold),
+            Ui.Text(watch.Subtitle ?? "", T.Body, new SolidColorBrush(Color.FromArgb(200, 255, 255, 255))));
+        if (watch.Progress >= 0)
+            caption.Children.Add(new Border
+            {
+                Height = 8, Width = 420, CornerRadius = new CornerRadius(4), Background = T.WithAlpha(Colors.White, 0.25), HorizontalAlignment = HorizontalAlignment.Left,
+                Margin = new Thickness(0, 12, 0, 0),
+                Child = new Border { Background = Brushes.White, CornerRadius = new CornerRadius(4), HorizontalAlignment = HorizontalAlignment.Left, Width = Math.Max(8, 420 * Math.Clamp(watch.Progress, 0, 1)) },
+            });
+        caption.VerticalAlignment = VerticalAlignment.Bottom;
+        caption.Margin = new Thickness(40, 0, 40, 38);
+        big.Children.Add(caption);
+        var bigCard = new Card(big, 30) { Width = bigW, Height = h, FocusScale = 1.0, ShowGlow = false };
+        bigCard.Item.Activate = watch.Open;
+        bigCard.Item.Secondary = watch.Options;
+        _entries[bigCard.Item] = watch;
+        focus.Add(bigCard.Item);
+        _carFirst = bigCard.Item;
+        grid.Children.Add(bigCard.Col(0).Row(0, 3));
+
+        grid.Children.Add(NowPlayingWidget(focus, smallW, smallH).Col(2).Row(0));
+        grid.Children.Add(TodayWidget(focus, smallW, smallH, sections).Col(2).Row(2));
+        return grid;
+    }
+
+    private static Border Widget(double w, double h) => new()
+    {
+        Width = w, Height = h, CornerRadius = new CornerRadius(30), ClipToBounds = true,
+        Background = new SolidColorBrush(Color.FromArgb(235, 28, 28, 30)),
+    };
+
+    /// <summary>Now Playing: the cover, the song and the buttons; while nothing plays, the
+    /// newest album with a button to open it.</summary>
+    private Control NowPlayingWidget(FocusSpatial focus, double w, double h)
+    {
+        var box = Widget(w, h);
+        var artSize = Math.Min(h - 80, 200);
+        var art = new Border { Width = artSize, Height = artSize, CornerRadius = new CornerRadius(14), ClipToBounds = true, VerticalAlignment = VerticalAlignment.Top };
+        var title = Ui.Text("", 32, T.Text, FontWeight.Bold);
+        var artist = Ui.Text("", 24, T.TextMuted);
+        var head = Ui.Text("NOW PLAYING", 20, T.Accent, FontWeight.SemiBold, letterSpacing: 1);
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 18, Margin = new Thickness(-14, 8, 0, 0) };
+        var info = Ui.V(6, head, title, artist, buttons);
+        info.VerticalAlignment = VerticalAlignment.Center;
+        var layout = Ui.Grid("Auto,*", "*");
+        layout.Children.Add(art.Col(0).Align(HorizontalAlignment.Left, VerticalAlignment.Center));
+        layout.Children.Add(info.Margin(30, 0, 10, 0).Col(1));
+        box.Child = layout.Margin(30, 26);
+
+        Card Button(string glyph, double size, Action run)
+        {
+            var card = CarPlay.IconCard(Icons.Make(glyph, size * 0.5, T.Text), size);
+            card.Item.Activate = run;
+            buttons.Children.Add(card);
+            focus.Add(card.Item);
+            _entries[card.Item] = new HomeEntry(RailKey + "music-" + glyph, null, null, glyph, "#FF375F", run);
+            return card;
+        }
+
+        string? shown = "\0";
+        if (CarPlay.MusicOn)
+        {
+            Button("previous", 72, () => Playback.PlayPrevious());
+            var play = Button("pause", 84, () => L.Player.TogglePause());
+            Button("next", 72, () => Playback.PlayNext());
+            void Refresh()
+            {
+                var path = L.Player.Path;
+                if (path != shown)
+                {
+                    shown = path;
+                    var item = path is null ? null : L.Library.Get(path);
+                    title.Text = item?.Title ?? (path is null ? "Nothing playing" : Path.GetFileNameWithoutExtension(path));
+                    artist.Text = item?.Artist ?? "";
+                    art.Child = ImageCache.Art(item?.Art, artSize, artSize, Ui.Monogram(title.Text ?? "?", "#FF375F", artSize));
+                }
+                play.Content = Icons.Make(L.Player.IsPlaying ? "pause" : "play", 42, T.Text).Align(HorizontalAlignment.Center, VerticalAlignment.Center);
+            }
+            Refresh();
+            _carTimer = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Normal, (_, _) => Refresh());
+            _carTimer.Stop();
+        }
+        else
+        {
+            head.Text = "MUSIC";
+            head.Foreground = new SolidColorBrush(Color.Parse("#FF375F"));
+            var album = L.Library.Albums().FirstOrDefault();
+            title.Text = album?.Name ?? "Music";
+            artist.Text = album?.Artist ?? "Add a music folder to play here";
+            art.Child = ImageCache.Art(album?.Art, artSize, artSize, CarPlay.Icon(HomeModel.Destinations()[1], artSize));
+            Button("play", 84, () =>
+            {
+                CarPlay.Note("Music");
+                if (album is not null) L.Window.Push(new AlbumScreen(album)); else HomeModel.Destinations()[1].Open();
+            });
+        }
+        return box;
+    }
+
+    /// <summary>Today: the weekday in red over the date, like a calendar, beside what was
+    /// added to the library most recently.</summary>
+    private Control TodayWidget(FocusSpatial focus, double w, double h, Dictionary<string, HomeSection> sections)
+    {
+        var now = DateTime.Now;
+        var date = Ui.V(0,
+            Ui.Text(now.ToString("dddd").ToUpperInvariant(), 22, new SolidColorBrush(Color.Parse("#FF453A")), FontWeight.SemiBold, letterSpacing: 1),
+            Ui.Text(now.Day.ToString(), 104, T.Text, FontWeight.Light));
+        var newest = sections.GetValueOrDefault("videos")?.Entries.FirstOrDefault(e => e.Tile is null && e.Video is not null || e.Art is not null);
+        var album = L.Library.Albums().FirstOrDefault();
+        var lines = Ui.V(8, Ui.Text("RECENTLY ADDED", 20, T.TextMuted, FontWeight.SemiBold, letterSpacing: 1));
+        void Line(string icon, string text, string? sub)
+        {
+            var row = Ui.H(14, Icons.Make(icon, 28, T.Accent), Ui.V(0, Ui.Text(text, 28, T.Text, FontWeight.SemiBold), Ui.Text(sub ?? "", 22, T.TextMuted)));
+            lines.Children.Add(row.Margin(0, 6, 0, 0));
+        }
+        if (newest is not null) Line("video", newest.Title, newest.Subtitle);
+        if (album is not null) Line("album", album.Name, album.Artist);
+        if (newest is null && album is null) Line("library-add", "Nothing yet", "Add folders in Files");
+        var layout = Ui.Grid("Auto,*", "*");
+        layout.Children.Add(date.Col(0).Align(HorizontalAlignment.Left, VerticalAlignment.Center));
+        layout.Children.Add(new Border { Width = 1, Background = T.Line, Margin = new Thickness(34, 10, 0, 10), HorizontalAlignment = HorizontalAlignment.Left }.Col(1));
+        layout.Children.Add(lines.Margin(64, 0, 10, 0).Col(1).Align(HorizontalAlignment.Stretch, VerticalAlignment.Center));
+        var box = Widget(w, h);
+        box.Child = layout.Margin(36, 24);
+        var open = newest is not null ? CarPlay.Noted(newest) : CarPlay.Noted(HomeModel.Destinations()[0]);
+        var card = new Card(box, 30) { Width = w, Height = h, FocusScale = 1.0, ShowGlow = false };
+        card.Body.Background = Brushes.Transparent;
+        card.Item.Activate = open.Open;
+        _entries[card.Item] = open with { Title = RailKey + "today" };
+        focus.Add(card.Item);
+        return card;
+    }
 
     // ------------------------------------------------------------------ input
 
@@ -816,8 +1112,9 @@ public sealed class HomeScreen : Screen
 
     protected override bool OnBack()
     {
-        // At the root, B moves focus back to the start before offering to leave.
-        if (Scope?.Root.Items.FirstOrDefault() is { } first && Focused != first)
+        // At the root, B moves focus back to the start before offering to leave (in CarPlay,
+        // the first app rather than the sidebar).
+        if ((T.Def.Layout == HomeLayout.Dock ? _carFirst : Scope?.Root.Items.FirstOrDefault()) is { } first && Focused != first)
         {
             FocusItem(first);
             L.Play(Lounge.Core.Audio.UiSound.Back);

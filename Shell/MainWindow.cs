@@ -28,6 +28,7 @@ public sealed class MainWindow : Window
     private readonly Backdrop _backdrop = new();
     private readonly Grid _screens = new();
     private readonly StatusBar _status = new();
+    private readonly CarPlay.WindowRail _rail = new();
     private readonly VolumeHud _volume = new();
     private readonly Grid _overlays = new();
     private readonly ToastHost _toasts = new();
@@ -69,6 +70,7 @@ public sealed class MainWindow : Window
         try { Icon = new WindowIcon(Avalonia.Platform.AssetLoader.Open(new Uri("avares://Lounge/Assets/Lounge.ico"))); } catch (Exception) { }
 
         _root.Children.Add(_backdrop);
+        _root.Children.Add(_rail);
         _root.Children.Add(_screens);
         _root.Children.Add(_status);
         _root.Children.Add(_volume);
@@ -164,6 +166,7 @@ public sealed class MainWindow : Window
     {
         var old = Top;
         _stack.Add(screen);
+        Inset(screen);
         _screens.Children.Add(screen);
         Transition(screen, old, forward: true);
         old?.OnHidden();
@@ -211,6 +214,14 @@ public sealed class MainWindow : Window
         if (_stack.Remove(s)) { _screens.Children.Remove(s); s.OnClosed(); }
     }
 
+    /// <summary>The width the CarPlay sidebar takes from screens beside it.</summary>
+    public double RailInset => CarPlay.On ? CarPlay.RailWidth : 0;
+
+    /// <summary>In CarPlay, screens beside the sidebar start to its right (Home lays out
+    /// its own sidebar; full-screen screens cover it).</summary>
+    private static void Inset(Screen s) =>
+        s.Margin = CarPlay.On && s.ShowsChrome && s is not HomeScreen ? new Thickness(CarPlay.RailWidth, 0, 0, 0) : default;
+
     private void Transition(Screen incoming, Screen? outgoing, bool forward)
     {
         var tin = new ScaleTransform(1, 1);
@@ -247,7 +258,9 @@ public sealed class MainWindow : Window
     {
         var top = Top;
         _backdrop.IsVisible = top?.ShowsBackdrop ?? true;
-        _status.IsVisible = top?.ShowsChrome ?? true;
+        // CarPlay keeps the time and what is playing in its sidebar.
+        _status.IsVisible = (top?.ShowsChrome ?? true) && !CarPlay.On;
+        _rail.Refresh(top);
         UpdateContext();
         UpdateAmbient();
         UpdateNowPlaying();
@@ -376,6 +389,11 @@ public sealed class MainWindow : Window
         _padOverlay.Set(!connected && _clock.ElapsedMilliseconds > _keyboardUntil && L.Dormant.Mode == ShellMode.Active);
         if (!connected && watching && L.Player.IsPlaying) L.Player.Pause();
         if (connected) L.Rumble(0.3f, 80);
+        if (CarPlay.On)
+        {
+            _rail.Refresh(Top);
+            if (Top is HomeScreen home && _overlayStack.Count == 0) home.Rebuild();
+        }
     }
 
     public void UpdateContext()
@@ -666,11 +684,23 @@ public sealed class MainWindow : Window
         L.Sound.SetAmbient(want);
     }
 
+    private bool _railMusic;
+
     private void UpdateNowPlaying()
     {
-        if (L.NowPlayingKind == MediaKind.Audio && L.Player.State is PlayerState.Playing or PlayerState.Paused && Top is not NowPlayingScreen)
+        // Not on Home: its menu leads with Now Playing, and the chip would crowd the top row.
+        if (L.NowPlayingKind == MediaKind.Audio && L.Player.State is PlayerState.Playing or PlayerState.Paused && Top is not (NowPlayingScreen or HomeScreen))
             _status.SetNowPlaying(Playback.NowPlayingLine());
         else _status.SetNowPlaying(null);
+        // Now Playing comes and goes on Home (and in CarPlay's sidebar) as music starts and stops.
+        var musicOn = CarPlay.MusicOn;
+        if (Top is MusicScreen music) music.NowPlayingChanged();
+        if (musicOn != _railMusic)
+        {
+            _railMusic = musicOn;
+            if (CarPlay.On) _rail.Refresh(Top);
+            if (Top is HomeScreen home && _overlayStack.Count == 0) home.Rebuild();
+        }
     }
 
     // ------------------------------------------------------------------ settings
@@ -698,6 +728,7 @@ public sealed class MainWindow : Window
                 break;
             case K.ShowClock or K.Clock24h:
                 _status.Tick();
+                _rail.Refresh(Top);
                 break;
             case K.HoldMs or K.ReturnHoldMs or K.RepeatDelayMs or K.RepeatRateMs or K.Deadzone or K.TriggerThreshold or K.UseGuide:
                 L.ApplyRouterOptions();
@@ -736,7 +767,7 @@ public sealed class MainWindow : Window
         var home = new HomeScreen();
         _stack.Add(home);
         _screens.Children.Insert(0, home);
-        foreach (var k in keep) { _stack.Add(k); k.IsVisible = false; }
+        foreach (var k in keep) { _stack.Add(k); k.IsVisible = false; Inset(k); }
         if (keep.Count > 0) keep[^1].IsVisible = true; else home.OnShown();
         AfterNavigation();
         if (section is not null) AddOverlay(new SettingsPanel(section));

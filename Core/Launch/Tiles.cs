@@ -80,7 +80,7 @@ public sealed class TileStore
 
     /// <summary>One-time changes to saved tiles, recorded beside tiles.json so each runs
     /// once and a later choice by the user (removing a tile, switching it back) sticks.</summary>
-    private static readonly string[] Migrations = ["logos", "prime-inside", "hbomax", "starfall", "hellgate-gone", "browser"];
+    private static readonly string[] Migrations = ["logos", "prime-inside", "hbomax", "starfall", "hellgate-gone", "browser", "bells-and-lamps-gone", "spotify-gone"];
 
     private string MigrationsPath => Path.ChangeExtension(_path, ".migrations");
 
@@ -144,6 +144,11 @@ public sealed class TileStore
             // 1.0.22: Lounge's browser (with private browsing) joins the end of the websites.
             if (done.Add("browser") && !tiles.Any(t => t.IsBrowser))
                 tiles.Insert(tiles.FindLastIndex(t => t.IsWeb) + 1, Defaults().Single(d => d.Id == "browser"));
+            // Bellringer, Lamplighter and a Spotify tile were tried in a development build and
+            // dropped; their tiles go if that build added them.
+            if (done.Add("bells-and-lamps-gone"))
+                tiles.RemoveAll(t => t.Kind == TileKind.Builtin && t.Target is "bellringer" or "lamplighter");
+            if (done.Add("spotify-gone")) tiles.RemoveAll(t => t.Id == "spotify" && t.Kind == TileKind.Web);
             if (done.Count != before) { WriteMigrations(done); migrated = true; }
             return tiles;
         }

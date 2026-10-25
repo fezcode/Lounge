@@ -151,7 +151,7 @@ public sealed class FilesScreen : Screen
         }
         else if (gridView)
         {
-            var columns = Math.Max(3, (int)((L.Window.DesignWidth - 600) / 250));
+            var columns = Math.Max(3, (int)((L.Window.DesignWidth - L.Window.RailInset - 600) / 250));
             var g = new FocusGrid(columns);
             var wrap = new WrapPanel { Orientation = Orientation.Horizontal, ItemWidth = 250, ItemHeight = 280 };
             foreach (var (label, icon, run) in actions) wrap.Children.Add(ActionTile(label, icon, run, g, grid: true));
