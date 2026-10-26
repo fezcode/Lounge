@@ -51,7 +51,7 @@ public sealed class RemoteScreen : Screen
             var spot = new Border
             {
                 Width = w, Height = h, CornerRadius = new CornerRadius(r),
-                Background = new SolidColorBrush(Color.FromArgb(55, 255, 255, 255)),
+                Background = T.WithAlpha(T.TextColor, 0.22),
                 BorderBrush = T.Line, BorderThickness = new Thickness(1.5),
                 Child = ControllerArt.Face(b, w, h),
             };

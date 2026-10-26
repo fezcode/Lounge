@@ -30,6 +30,9 @@ public static class T
     public static Color Bg0Color { get; private set; }
 
     public static double Radius => Def.Radius;
+
+    /// <summary>A light theme: dark type on a pale background.</summary>
+    public static bool Light => (Bg0Color.R * 0.299 + Bg0Color.G * 0.587 + Bg0Color.B * 0.114) > 140;
     public static double RadiusLarge => Def.RadiusLarge;
 
     private const string Fallback = "fonts:Inter#Inter, Segoe UI";

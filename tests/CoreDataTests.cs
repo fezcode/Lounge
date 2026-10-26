@@ -128,7 +128,8 @@ public class SettingsTests
                 Assert.True(d.Max > d.Min, d.Key);
                 Assert.InRange(Convert.ToDouble(d.Default), d.Min, d.Max);
             }
-            if (d.Kind == SettingKind.Choice) Assert.Contains(d.Choices, c => c.Value == (string)d.Default!);
+            // A choice with no listed values is filled at run time (the monitors for K.Display).
+            if (d.Kind == SettingKind.Choice && d.Choices.Count > 0) Assert.Contains(d.Choices, c => c.Value == (string)d.Default!);
         }
         foreach (var theme in SettingsSchema.Themes)
             Assert.True(SettingsSchema.TryGet(K.WallpaperFor(theme.Value), out _), $"no wallpaper setting for {theme.Value}");
@@ -185,12 +186,23 @@ public class SettingsTests
     }
 
     [Fact]
+    public void The_screen_setting_takes_any_monitor_and_stepping_it_in_Core_is_harmless()
+    {
+        using var dir = new TempDir();
+        var s = new SettingsStore(dir.File("settings.json"), dir.File("config.ini"));
+        Assert.Equal("", s.String(K.Display));                 // the main screen
+        Assert.True(s.Set(K.Display, @"\\.\DISPLAY2"));      // monitors are only known at run time
+        s.Step(K.Display, 1);                                   // no choices here: nothing to step to, no crash
+        Assert.Equal(@"\\.\DISPLAY2", s.String(K.Display));
+    }
+
+    [Fact]
     public void Step_cycles_choices_and_moves_numbers()
     {
         using var dir = new TempDir();
         var s = new SettingsStore(dir.File("settings.json"), dir.File("config.ini"));
         s.Step(K.Theme, -1);
-        Assert.Equal("carplay", s.String(K.Theme));   // wraps to the last theme
+        Assert.Equal("saga", s.String(K.Theme));   // wraps to the last theme
         s.Step(K.UiScale, 1);
         Assert.Equal(1.05, s.Double(K.UiScale), 6);
         Assert.Equal("105%", SettingsSchema.Get(K.UiScale).ShowValue(s.Get(K.UiScale)));

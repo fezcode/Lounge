@@ -108,6 +108,8 @@ public class App : Application
         L.Tiles = new TileStore(AppPaths.Tiles);
         L.History = new WatchHistory(AppPaths.History);
         L.Library = new LibraryDb(AppPaths.LibraryDb);
+        L.Weather = new Lounge.Core.Weather.WeatherService(Path.Combine(AppPaths.Root, "weather.json"),
+            new HttpClient { Timeout = TimeSpan.FromSeconds(15) });
         Ff.Ensure();
         L.Player = new MediaPlayer();
         L.Player.Volume = (float)L.Settings.Double(K.PlayerVolume);

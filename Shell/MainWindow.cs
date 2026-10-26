@@ -90,6 +90,7 @@ public sealed class MainWindow : Window
         Opened += (_, _) =>
         {
             _hwnd = TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+            PlaceOnDisplay();
             if (!NoActivate) Win32.BringToFront(_hwnd);
         };
 
@@ -137,6 +138,9 @@ public sealed class MainWindow : Window
         // A website's icon arrived: show it on its tile.
         SiteIcons.Updated += () => Dispatcher.UIThread.Post(() => { if (Top is HomeScreen h) h.Rebuild(); });
         L.Settings.Changed += OnSetting;
+        // The forecast: now, then every ten minutes (it only goes online when half an hour old).
+        L.RefreshWeather();
+        new DispatcherTimer(TimeSpan.FromMinutes(10), DispatcherPriority.Background, (_, _) => L.RefreshWeather()).Start();
         L.Player.StateChanged += _ => Dispatcher.UIThread.Post(() => { UpdateAmbient(); UpdateNowPlaying(); });
     }
 
@@ -259,7 +263,8 @@ public sealed class MainWindow : Window
         var top = Top;
         _backdrop.IsVisible = top?.ShowsBackdrop ?? true;
         // CarPlay keeps the time and what is playing in its sidebar.
-        _status.IsVisible = (top?.ShowsChrome ?? true) && !CarPlay.On;
+        // Liquid Glass's sidebar carries the time on Home.
+        _status.IsVisible = (top?.ShowsChrome ?? true) && !CarPlay.On && !(top is HomeScreen && T.Def.Layout == Lounge.Core.Themes.HomeLayout.Sidebar);
         _rail.Refresh(top);
         UpdateContext();
         UpdateAmbient();
@@ -745,8 +750,27 @@ public sealed class MainWindow : Window
             case K.PlayerVolume:
                 L.Player.Volume = (float)L.Settings.Double(K.PlayerVolume);
                 break;
+            case K.Display:
+                PlaceOnDisplay();
+                break;
+            case K.ShowWeather or K.ShowCalendar or K.WeatherPlace or K.WeatherUnits:
+                L.RefreshWeather(force: key is K.WeatherPlace or K.WeatherUnits);
+                Find<HomeScreen>()?.Rebuild();
+                break;
         }
         if (key.StartsWith("sub_")) L.Player.Subtitles.SetStyle(L.SubStyle());
+    }
+
+    /// <summary>Fills the monitor chosen in Settings. Full screen always lands on the monitor
+    /// the window is on, so the window steps out of full screen, moves there, and goes back.</summary>
+    public void PlaceOnDisplay()
+    {
+        if (_windowed || Displays.Chosen() is not { } screen) return;
+        if (Screens.ScreenFromWindow(this) is { } now && Displays.Id(now) == Displays.Id(screen)) return;
+        var state = WindowState;
+        if (state == WindowState.FullScreen) WindowState = WindowState.Normal;
+        Position = screen.WorkingArea.Position + new PixelPoint(40, 40);
+        if (state == WindowState.FullScreen) WindowState = WindowState.FullScreen;
     }
 
     /// <summary>Applies the theme; a rebuild recreates the screens so every brush changes.</summary>
@@ -755,6 +779,8 @@ public sealed class MainWindow : Window
         T.Apply(Lounge.Core.Themes.Themes.Get(L.Settings.String(K.Theme)), L.Settings.String(K.Accent));
         FontFamily = T.Font;
         _backdrop.Restyle();
+        _status.Restyle();
+        _volume.Restyle();
         _backdrop.SetWallpaper(L.Settings.String(K.WallpaperFor(T.Def.Id)));
         App.ConfigureSound();
         if (!rebuild) return;

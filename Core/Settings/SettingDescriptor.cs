@@ -16,6 +16,8 @@ public enum SettingKind
     Folders,
     /// <summary>no value; the UI runs a command (open Remote, rescan, reset all)</summary>
     Action,
+    /// <summary>string typed on the on-screen keyboard ("" = <see cref="SettingDescriptor.Empty"/>)</summary>
+    Text,
 }
 
 /// <summary>Which file a setting lives in. Player settings shared with tivi's vocabulary
@@ -45,6 +47,8 @@ public sealed record SettingDescriptor(
     public bool IniHex { get; init; }
     /// <summary>Scale between the stored value and the shown one (tivi stores volume 0..1, the UI shows %).</summary>
     public double DisplayScale { get; init; } = 1;
+    /// <summary>What an empty text setting shows.</summary>
+    public string Empty { get; init; } = "None";
 
     public string ShowValue(object? value)
     {
@@ -65,6 +69,8 @@ public sealed record SettingDescriptor(
             case SettingKind.Path:
                 var p = value as string;
                 return string.IsNullOrEmpty(p) ? "Default" : System.IO.Path.GetFileName(p.TrimEnd('\\', '/')) is { Length: > 0 } n ? n : p;
+            case SettingKind.Text:
+                return value is string { Length: > 0 } text2 ? text2 : Empty;
             case SettingKind.Folders:
                 var list = value as IReadOnlyList<string> ?? [];
                 return list.Count switch { 0 => "None", 1 => "1 folder", _ => $"{list.Count} folders" };

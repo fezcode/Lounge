@@ -398,12 +398,12 @@ public class AudioAndThemeTests
     }
 
     [Fact]
-    public void Eight_themes_with_distinct_layouts_and_ambient()
+    public void Eleven_themes_with_distinct_layouts_and_ambient()
     {
         var all = Lounge.Core.Themes.Themes.All;
-        Assert.Equal(8, all.Count);
-        Assert.Equal(8, all.Select(t => t.Layout).Distinct().Count());
-        Assert.Equal(8, all.Select(t => t.Backdrop).Distinct().Count());
+        Assert.Equal(11, all.Count);
+        Assert.Equal(11, all.Select(t => t.Layout).Distinct().Count());
+        Assert.Equal(11, all.Select(t => t.Backdrop).Distinct().Count());
         Assert.Equal(all.Select(t => t.Id), Lounge.Core.Settings.SettingsSchema.Themes.Select(c => c.Value));
         Assert.All(all, t => Assert.True(AmbientSynth.Presets.ContainsKey(t.AmbientPreset)));
         Assert.Equal("#FF375F", Lounge.Core.Themes.Themes.Aurora.WithAccent("#FF375F").Accent);

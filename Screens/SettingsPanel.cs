@@ -177,7 +177,7 @@ public sealed class SettingsPanel : Grid, IInputLayer
                 knobSpring = new Spring(L.Settings.Bool(d.Key) ? 1 : 0, v =>
                 {
                     kt.X = 34 * v;
-                    track.Background = new SolidColorBrush(Lerp(Color.FromArgb(70, 255, 255, 255), T.AccentColor, Math.Clamp(v, 0, 1)));
+                    track.Background = new SolidColorBrush(Lerp(Color.FromArgb(70, T.TextColor.R, T.TextColor.G, T.TextColor.B), T.AccentColor, Math.Clamp(v, 0, 1)));
                 }, 500, 32);
                 trailing = knobTrack;
                 break;
@@ -204,7 +204,7 @@ public sealed class SettingsPanel : Grid, IInputLayer
         void Refresh()
         {
             var v = L.Settings.Get(d.Key);
-            value.Text = d.ShowValue(v);
+            value.Text = d.Key == K.Display ? Displays.Describe(L.Settings.String(d.Key)) : d.ShowValue(v);
             value.Foreground = L.Settings.IsDefault(d.Key) ? T.TextMuted : T.Text;
             knobSpring?.To(v is true ? 1 : 0);
         }
@@ -229,6 +229,11 @@ public sealed class SettingsPanel : Grid, IInputLayer
                 L.Play(UiSound.Toggle);
                 L.Rumble(0.15f, 30);
                 break;
+            case SettingKind.Choice when d.Key == K.Display:
+                var shown = L.Settings.String(d.Key);
+                L.Window.Menu(d.Label, Displays.Options().Select(o => new MenuEntry(o.Label, "",
+                    () => L.Settings.Set(d.Key, o.Value), Checked: o.Value == shown)).ToList());
+                break;
             case SettingKind.Choice:
                 var current = L.Settings.String(d.Key);
                 // Only the selected choice is ticked (on the right); a tick on every row read as all selected.
@@ -247,6 +252,12 @@ public sealed class SettingsPanel : Grid, IInputLayer
                 break;
             case SettingKind.Action:
                 RunAction(d);
+                break;
+            case SettingKind.Text:
+                L.Window.Keyboard(new KeyboardRequest(d.Label, L.Settings.String(d.Key)), text =>
+                {
+                    if (text is not null) L.Settings.Set(d.Key, text);
+                });
                 break;
         }
     }
@@ -342,7 +353,7 @@ public sealed class SettingsPanel : Grid, IInputLayer
                 var dir = e.Action == Act.Left ? -1 : 1;
                 if (InRows && _rowSettings[_scope.Focused!] is { Kind: SettingKind.Integer or SettingKind.Number or SettingKind.Choice } d)
                 {
-                    L.Settings.Step(d.Key, dir);
+                    if (d.Key == K.Display) Displays.Step(dir); else L.Settings.Step(d.Key, dir);
                     L.Play(UiSound.Move);
                     return true;
                 }

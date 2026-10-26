@@ -11,6 +11,7 @@ public static class K
     public const string IdleDimMinutes = "general.idleDimMinutes";
     public const string LaunchAtLogin = "general.launchAtLogin";
     public const string AlwaysOnTop = "general.alwaysOnTop";
+    public const string Display = "general.display";
 
     // Appearance
     public const string Theme = "appearance.theme";
@@ -28,6 +29,10 @@ public static class K
     public const string ShowMusic = "home.showMusic";
     public const string ShowApps = "home.showApps";
     public const string ShowWeb = "home.showWeb";
+    public const string ShowWeather = "home.showWeather";
+    public const string ShowCalendar = "home.showCalendar";
+    public const string WeatherPlace = "home.weatherPlace";
+    public const string WeatherUnits = "home.weatherUnits";
 
     // Controller
     public const string OpenRemote = "controller.remote";
@@ -144,6 +149,9 @@ public static class SettingsSchema
         new("screening", "Screening Room"),
         new("arcade", "Arcade"),
         new("carplay", "Motorcar Recital"),
+        new("daylight", "Daylight"),
+        new("liquid", "Liquid Glass"),
+        new("saga", "Saga"),
     ];
 
     public static readonly IReadOnlyList<SettingChoice> Accents =
@@ -213,6 +221,8 @@ public static class SettingsSchema
             Toggle(K.Clock24h, "General", "24-hour clock", true),
             Int(K.IdleDimMinutes, "General", "Dim when idle", 10, 0, 60, 1, " min", "Fades to a quiet clock after this long without input. 0 turns it off."),
             Toggle(K.LaunchAtLogin, "General", "Open Lounge when Windows starts", false),
+            // The monitors are only known at run time: the Shell lists them (empty = the main one).
+            Choice(K.Display, "General", "Screen", "", [], "Which monitor Lounge fills. It moves there as soon as you choose."),
             Toggle(K.AlwaysOnTop, "General", "Keep Lounge on top, full screen", true,
                 "Nothing covers Lounge while you use it, and it stays full screen. Apps you open from Lounge still come to the front."),
 
@@ -232,6 +242,12 @@ public static class SettingsSchema
             Toggle(K.ShowMusic, "Appearance", "Home: Music", true),
             Toggle(K.ShowApps, "Appearance", "Home: Apps & Games", true),
             Toggle(K.ShowWeb, "Appearance", "Home: Web", true),
+            Toggle(K.ShowWeather, "Appearance", "Home: Weather", true, "The weather where you are, from Open-Meteo."),
+            Toggle(K.ShowCalendar, "Appearance", "Home: Calendar", true, "Today's date and the month."),
+            new(K.WeatherPlace, "Appearance", "Weather city", SettingKind.Text, "")
+                { Help = "Empty finds your city from your internet connection.", Empty = "Automatic" },
+            Choice(K.WeatherUnits, "Appearance", "Temperature", "auto",
+                C("auto", "Your region's", "c", "Celsius", "f", "Fahrenheit")),
 
             // ---- Controller
             new(K.OpenRemote, "Controller", "Remote - button mapping", SettingKind.Action, null) { Help = "See every button on a controller diagram and remap it." },

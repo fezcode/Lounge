@@ -36,10 +36,12 @@ public class Card : Panel
     {
         if (_glow is null) return;
         var row = _focusScale <= 1.03;
+        // On a light theme a dark shadow that strong reads as a smudge: half as deep.
+        var depth = T.Light ? 0.45 : 1;
         _glow.BoxShadow = new BoxShadows(new BoxShadow
         {
             OffsetY = row ? 6 : 18, Blur = row ? 18 : 48, Spread = 0,
-            Color = Color.FromArgb(row ? (byte)110 : (byte)150, 0, 0, 0),
+            Color = Color.FromArgb((byte)((row ? 110 : 150) * depth), 0, 0, 0),
         }, [new BoxShadow { Blur = row ? 12 : 34, Spread = row ? 0 : 2, Color = Color.FromArgb(row ? (byte)60 : (byte)90, T.FocusColor.R, T.FocusColor.G, T.FocusColor.B) }]);
     }
     public bool ShowRing { get; set; } = true;

@@ -95,8 +95,8 @@ public static class CarPlay
                 return box;
             }
             box.Background = tile.IsWeb ? new SolidColorBrush(Color.FromRgb(16, 16, 18)) : Gloss(e.Color);
-            // A streaming site's wordmark is wide; Lounge's own games have square emblems.
-            var wordmark = tile.Logo.Length > 0 && tile.Kind != Lounge.Core.Launch.TileKind.Builtin;
+            // A streaming site's wordmark is wide; games and apps have square emblems.
+            var wordmark = tile.Logo.Length > 0 && tile.IsWeb;
             var w = wordmark ? size * 0.78 : tile.Logo.Length > 0 ? size * 0.72 : size * 0.62;
             box.Child = ImageCache.ArtNow(art, w, wordmark ? size * 0.4 : w, stretch: Stretch.Uniform, waiting: Brushes.Transparent)
                 .Align(HorizontalAlignment.Center, VerticalAlignment.Center);

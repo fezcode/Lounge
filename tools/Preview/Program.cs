@@ -168,6 +168,8 @@ internal static class Program
         L.Tiles = new TileStore(AppPaths.Tiles);
         L.History = new WatchHistory(AppPaths.History);
         L.Library = new LibraryDb(AppPaths.LibraryDb);
+        // Previews never go online: a sample forecast for the weather widgets.
+        L.Weather.Show(Lounge.Core.Weather.WeatherService.Sample(DateTime.Now));
         L.Player = new MediaPlayer();
         L.Volume = new SystemVolume();
     }

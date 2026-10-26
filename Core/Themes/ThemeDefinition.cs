@@ -24,14 +24,27 @@ public enum HomeLayout
     /// button), app icons in pages of two rows with page dots, and a Dashboard of widgets
     /// one press away.</summary>
     Dock,
+    /// <summary>A light TV launcher: centred pill tabs, the focused item's title large, an
+    /// Up Next panel beside the weather, and a row of app tiles along the bottom.</summary>
+    Glance,
+    /// <summary>A floating glass sidebar (who's watching, Search, Home, the destinations, then
+    /// the apps), the focused item's art filling the screen, its title over an Up Next row.</summary>
+    Sidebar,
+    /// <summary>A northern hall's inventory: the destinations as uppercase words with runes, the
+    /// chosen one's contents as a plain list beside them, and the focused thing shown on the
+    /// right, its picture fading into the dark over a framed card.</summary>
+    Hall,
 }
 
 /// <summary>A procedural default backdrop, so themes need no shipped wallpapers. Projector:
 /// a warm cone of light with flicker, film grain and a vignette. Pixel: a low-resolution
 /// pixel-art scene (dithered sky, stars, a striped sun, parallax mountains, a scrolling grid)
 /// scaled up without smoothing, under CRT scanlines. Drive: a car display's wallpaper,
-/// black with broad bands of colour sweeping across it.</summary>
-public enum BackdropStyle { Aurora, Sunset, Fanart, Waves, Glow, Projector, Pixel, Drive }
+/// black with broad bands of colour sweeping across it. Mist: a pale morning grey with soft
+/// pastel light drifting through it. Liquid: near-black with warm and cool light pooling
+/// under glass, and a slow sheen sliding across it. Snowfall: a cold night over dark mountains,
+/// fog drifting and snow falling.</summary>
+public enum BackdropStyle { Aurora, Sunset, Fanart, Waves, Glow, Projector, Pixel, Drive, Mist, Liquid, Snowfall }
 
 /// <summary>Everything a theme decides. Colours are #RRGGBB or #AARRGGBB strings so Core
 /// stays free of Avalonia; the Shell turns them into brushes.</summary>
@@ -80,6 +93,10 @@ public sealed record ThemeDefinition
     /// <summary>Placeholder art (no poster yet, app monograms) is pulled toward this colour
     /// so it sits in the theme's palette; null keeps the entries' own colours.</summary>
     public string? ArtTone { get; init; }
+
+    /// <summary>Panels are liquid glass: a bright rim catching light on the top edge and a
+    /// sheen across the top, over a dark tint.</summary>
+    public bool LiquidGlass { get; init; }
 
     /// <summary>The accent in force: the user's override, or the theme's own.</summary>
     public ThemeDefinition WithAccent(string? accent) =>
@@ -198,7 +215,56 @@ public static class Themes
         AmbientPreset = "carplay", SoundSet = "carplay",
     };
 
-    public static readonly IReadOnlyList<ThemeDefinition> All = [Aurora, LivingRoom, Kodi, ConsoleOne, Series, ScreeningRoom, Arcade, CarPlay];
+    /// <summary>A light TV launcher: pale grey glass and near-black type, white cards, a
+    /// blue accent, soft round corners and calm motion. The only light theme.</summary>
+    public static readonly ThemeDefinition Daylight = new()
+    {
+        Id = "daylight", Name = "Daylight", Layout = HomeLayout.Glance, Backdrop = BackdropStyle.Mist,
+        Bg0 = "#ECEDF1", Bg1 = "#E3E4EA",
+        BackdropA = "#C7D7F5", BackdropB = "#F3D3E2", BackdropC = "#CFEDE3",
+        Surface = "#B8FFFFFF", SurfaceStrong = "#FFF6F7FA", Line = "#1A202124",
+        Text = "#202124", TextMuted = "#B3202124", TextFaint = "#73202124",
+        Accent = "#1A73E8", OnAccent = "#FFFFFF", Focus = "#202124",
+        Danger = "#D93025", Success = "#188038",
+        Radius = 18, RadiusLarge = 26, FocusScale = 1.06, SpringStiffness = 360, SpringDamping = 28,
+        TitleWeight = 600,
+        AmbientPreset = "daylight", SoundSet = "daylight",
+    };
+
+    /// <summary>A dark TV home under liquid glass: near-black, white type, panels with bright
+    /// rims and a sheen, very round corners, soft springy motion.</summary>
+    public static readonly ThemeDefinition Liquid = new()
+    {
+        Id = "liquid", Name = "Liquid Glass", Layout = HomeLayout.Sidebar, Backdrop = BackdropStyle.Liquid,
+        Bg0 = "#0A0A0C", Bg1 = "#050506",
+        BackdropA = "#C2661F", BackdropB = "#3B1E78", BackdropC = "#0E5566",
+        Surface = "#26FFFFFF", SurfaceStrong = "#EB1A1A1F", Line = "#2EFFFFFF",
+        Text = "#FFFFFF", TextMuted = "#B8FFFFFF", TextFaint = "#6BFFFFFF",
+        Accent = "#0A84FF", OnAccent = "#FFFFFF", Focus = "#FFFFFF",
+        Radius = 22, RadiusLarge = 34, FocusScale = 1.08, SpringStiffness = 300, SpringDamping = 22,
+        TitleWeight = 700, LiquidGlass = true,
+        AmbientPreset = "liquid", SoundSet = "liquid",
+    };
+
+    /// <summary>A northern saga: smoked-glass panels on a snowy night, light condensed
+    /// uppercase type, silver knotwork and runes, square corners, no lift on focus (the
+    /// choice brightens and a marker appears beside it), deep wooden sounds.</summary>
+    public static readonly ThemeDefinition Saga = new()
+    {
+        Id = "saga", Name = "Saga", Layout = HomeLayout.Hall, Backdrop = BackdropStyle.Snowfall,
+        Bg0 = "#0B0C0E", Bg1 = "#060708",
+        BackdropA = "#1E2630", BackdropB = "#8996A5", BackdropC = "#12161C",
+        Surface = "#8C000000", SurfaceStrong = "#F8080A0C", Line = "#4DC9CED4",
+        Text = "#EDEDEA", TextMuted = "#A8EDEDEA", TextFaint = "#5CEDEDEA",
+        Accent = "#56697C", OnAccent = "#FFFFFF", Focus = "#E6E6E2",
+        Danger = "#B8483A", Success = "#7FA06A",
+        Radius = 0, RadiusLarge = 0, FocusScale = 1.03, SpringStiffness = 420, SpringDamping = 34,
+        UppercaseHeaders = true, HeaderLetterSpacing = 3, TitleWeight = 300,
+        BodyFont = "Barlow Condensed", DisplayFont = "Barlow Condensed", ArtTone = "#2B3138",
+        AmbientPreset = "saga", SoundSet = "saga",
+    };
+
+    public static readonly IReadOnlyList<ThemeDefinition> All = [Aurora, LivingRoom, Kodi, ConsoleOne, Series, ScreeningRoom, Arcade, CarPlay, Daylight, Liquid, Saga];
 
     public static ThemeDefinition Get(string id) => All.FirstOrDefault(t => t.Id == id) ?? Aurora;
 }

@@ -52,6 +52,8 @@ internal static class Program
             L.Tiles = new TileStore(AppPaths.Tiles);
             L.History = new WatchHistory(AppPaths.History);
             L.Library = new LibraryDb(AppPaths.LibraryDb);
+        // Checks never go online: a sample forecast, so the widgets show real text.
+        L.Weather.Show(Lounge.Core.Weather.WeatherService.Sample(DateTime.Now));
             L.Player = new MediaPlayer();
             L.Volume = new SystemVolume();
             _w = new MainWindow { Width = 1920, Height = 1080 };
@@ -84,7 +86,10 @@ Check("Screening Room's home animates without errors as focus moves", ScreeningH
 Check("In Now Playing, A presses the focused button and song", NowPlayingButtons);
             Check("Leaving Now Playing asks whether to keep the music playing", LeaveMusic);
             Check("CarPlay: icon pages, the sidebar beside every screen, the Dashboard", CarPlayHome);
+            Check("Weather and calendar widgets show in every theme and turn off in Settings", HomeWidgets);
             Check("No text runs into other text, in any theme, with music on", NoTextOverlaps);
+            Check("Long names wrap inside dialogs and toasts, in every theme", LongTextFits);
+            Check("No focused card on Home is cut off at the edge of its list, in any theme", FocusedCardsWhole);
 Check("On the Web screen, X opens a site's options", WebOptionsWithX);
         }
         catch (Exception e)
@@ -106,6 +111,8 @@ Check("On the Web screen, X opens a site's options", WebOptionsWithX);
 
     private static void Check(string name, Action body)
     {
+        // LOUNGE_CHECKS_ONLY=<words> runs just the checks whose names hold them.
+        if (Environment.GetEnvironmentVariable("LOUNGE_CHECKS_ONLY") is { Length: > 0 } only && !name.Contains(only, StringComparison.OrdinalIgnoreCase)) return;
         try
         {
             body();
@@ -852,6 +859,134 @@ Check("On the Web screen, X opens a site's options", WebOptionsWithX);
             _w.ApplyTheme(rebuild: true);
         }
         Assert(found.Count == 0, $"{found.Count} overlaps:\n      " + string.Join("\n      ", found.Distinct()));
+    }
+
+    private static void HomeWidgets()
+    {
+        var month = DateTime.Now.ToString("MMMM", System.Globalization.CultureInfo.CurrentCulture);
+        bool Shows(string text) => _w.Top!.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text is { } s && s.Contains(text) && t.IsEffectivelyVisible);
+        try
+        {
+            foreach (var theme in Core.Themes.Themes.All)
+            {
+                L.Settings.Set(K.Theme, theme.Id);
+                _w.ApplyTheme(rebuild: true);
+                _w.GoHome();
+                // CarPlay keeps its widgets on the Dashboard.
+                CarPlay.Dashboard = theme.Id == "carplay";
+                ((HomeScreen)_w.Top!).Rebuild();
+                Pump(20);
+                Assert(Shows("Miami"), $"{theme.Id}: no weather on Home");
+                Assert(Shows(month), $"{theme.Id}: no calendar on Home");
+                CarPlay.Dashboard = false;
+            }
+            // Daylight is up: switching both off in Settings takes them off Home.
+            L.Settings.Set(K.ShowWeather, false);
+            L.Settings.Set(K.ShowCalendar, false);
+            Pump(20);
+            Assert(!Shows("Miami") && !Shows(month), "the widgets stayed after being switched off");
+            L.Settings.Set(K.ShowWeather, true);
+            Pump(20);
+            Assert(Shows("Miami") && !Shows(month), "only the weather should be back");
+        }
+        finally
+        {
+            L.Settings.Set(K.ShowWeather, true);
+            L.Settings.Set(K.ShowCalendar, true);
+            CarPlay.Dashboard = false;
+            L.Settings.Set(K.Theme, "aurora");
+            _w.ApplyTheme(rebuild: true);
+        }
+    }
+
+    /// <summary>Text that leaves the box it is written in: a title running out of a dialog.</summary>
+    private static IEnumerable<string> Outside(Control box, string where)
+    {
+        if (box.TranslatePoint(new Point(0, 0), _w) is not { } o) yield break;
+        var area = new Rect(o, box.Bounds.Size).Inflate(1);
+        foreach (var tb in box.GetVisualDescendants().OfType<TextBlock>())
+        {
+            if (!tb.IsEffectivelyVisible || string.IsNullOrWhiteSpace(tb.Text) || tb.TextLayout is not { } layout) continue;
+            if (tb.TranslatePoint(new Point(0, 0), _w) is not { } at) continue;
+            var r = new Rect(at, new Size(Math.Min(layout.Width, tb.Bounds.Width), Math.Min(layout.Height, tb.Bounds.Height)));
+            if (!area.Contains(r)) yield return $"{where}: \"{tb.Text}\" runs out of its box";
+        }
+    }
+
+    private static void FocusedCardsWhole()
+    {
+        var focus = typeof(Lounge.Shell.Screen).GetMethod("FocusItem", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        var found = new List<string>();
+        try
+        {
+            foreach (var theme in Core.Themes.Themes.All)
+            {
+                L.Settings.Set(K.Theme, theme.Id);
+                _w.ApplyTheme(rebuild: true);
+                _w.GoHome();
+                Pump(20);
+                var home = (HomeScreen)_w.Top!;
+                foreach (var card in home.GetVisualDescendants().OfType<Card>().Where(c => c.IsEffectivelyVisible).ToList())
+                {
+                    focus.Invoke(home, [card.Item]);
+                    Pump(4);
+                    if (home.Focused != card.Item) continue;
+                    // The card as drawn, lifted by its focus scale.
+                    if (card.TranslatePoint(new Point(0, 0), _w) is not { } a || card.TranslatePoint(new Point(card.Bounds.Width, card.Bounds.Height), _w) is not { } z) continue;
+                    var drawn = new Rect(a, z);
+                    foreach (var clip in card.GetVisualAncestors().OfType<Control>().Where(x => x.ClipToBounds))
+                    {
+                        if (clip.TranslatePoint(new Point(0, 0), _w) is not { } o) continue;
+                        var box = new Rect(o, clip.Bounds.Size).Inflate(1.5);
+                        if (box.Contains(drawn)) continue;
+                        var name = (card as PosterCard)?.Title ?? card.GetVisualDescendants().OfType<TextBlock>().Select(t => t.Text).FirstOrDefault(t => !string.IsNullOrWhiteSpace(t)) ?? card.GetType().Name;
+                        var sides = string.Join(", ", new[] { ("left", box.Left - drawn.Left), ("top", box.Top - drawn.Top), ("right", drawn.Right - box.Right), ("bottom", drawn.Bottom - box.Bottom) }
+                            .Where(x => x.Item2 > 0).Select(x => $"{x.Item1} {x.Item2:0}px"));
+                        found.Add($"{theme.Id}: \"{name}\" is cut off by its {clip.GetType().Name} ({sides})");
+                        break;
+                    }
+                }
+            }
+        }
+        finally
+        {
+            L.Settings.Set(K.Theme, "aurora");
+            _w.ApplyTheme(rebuild: true);
+        }
+        Assert(found.Count == 0, $"{found.Count} cut off:\n      " + string.Join("\n      ", found.Distinct()));
+    }
+
+    private static void LongTextFits()
+    {
+        // Real file names: long, and with nowhere to break but the underscores.
+        const string name = "atlas_cam_1771346338_front_door_recording_backup.txt";
+        var found = new List<string>();
+        try
+        {
+            foreach (var theme in Core.Themes.Themes.All)
+            {
+                L.Settings.Set(K.Theme, theme.Id);
+                _w.ApplyTheme(rebuild: true);
+                Pump(10);
+                _w.Ask($"Open {name} with Windows?", "Lounge can't show this kind of file itself.", ["Open", "Cancel"], 1, _ => { }, "file");
+                Pump(20);
+                var dialog = _w.GetVisualDescendants().OfType<Border>().Last(x => x.MaxWidth == 1000);
+                found.AddRange(Outside(dialog, $"{theme.Id} dialog"));
+                _w.CloseOverlays();
+                _w.Toast($"Couldn't open {name} because no app on this PC is set up to open files of this kind", "warning");
+                Pump(30);
+                var toast = _w.GetVisualDescendants().OfType<ToastHost>().Single().GetVisualDescendants().OfType<Border>().Last(x => x.CornerRadius.TopLeft == 40);
+                found.AddRange(Outside(toast, $"{theme.Id} toast"));
+                Pump(120);
+            }
+        }
+        finally
+        {
+            _w.CloseOverlays();
+            L.Settings.Set(K.Theme, "aurora");
+            _w.ApplyTheme(rebuild: true);
+        }
+        Assert(found.Count == 0, $"{found.Count} overflows:\n      " + string.Join("\n      ", found));
     }
 
     private static void CarPlayHome()

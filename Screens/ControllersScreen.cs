@@ -153,7 +153,7 @@ public sealed class ControllerSetupScreen : Screen
             var spot = new Border
             {
                 Width = w, Height = h, CornerRadius = new CornerRadius(r),
-                Background = new SolidColorBrush(Color.FromArgb(55, 255, 255, 255)), BorderBrush = T.Line, BorderThickness = new Thickness(1.5),
+                Background = T.WithAlpha(T.TextColor, 0.22), BorderBrush = T.Line, BorderThickness = new Thickness(1.5),
                 Child = ControllerArt.Face(b, w, h), [Canvas.LeftProperty] = x, [Canvas.TopProperty] = y,
             };
             ControllerArt.Tilt(spot, b);
@@ -199,7 +199,7 @@ public sealed class ControllerSetupScreen : Screen
             var on = button == highlight;
             spot.BorderBrush = on ? T.Accent : T.Line;
             spot.BorderThickness = new Thickness(on ? 4 : 1.5);
-            spot.Background = on ? T.WithAlpha(T.AccentColor, 0.35) : new SolidColorBrush(Color.FromArgb(55, 255, 255, 255));
+            spot.Background = on ? T.WithAlpha(T.AccentColor, 0.35) : T.WithAlpha(T.TextColor, 0.22);
         }
     }
 

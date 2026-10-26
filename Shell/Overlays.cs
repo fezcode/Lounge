@@ -25,7 +25,7 @@ public sealed class ToastHost : StackPanel
 
     public void Show(string message, string icon = "info", double seconds = 3.2)
     {
-        var body = Ui.H(16, Icons.Make(icon, 30, T.Text), Ui.Text(message, T.Body, T.Text, FontWeight.SemiBold, TextWrapping.Wrap));
+        var body = ModalLayer.IconLine(Icons.Make(icon, 30, T.Text), Ui.Text(message, T.Body, T.Text, FontWeight.SemiBold, TextWrapping.Wrap), 16);
         body.MaxWidth = 1100;
         var pill = new Border
         {
@@ -93,6 +93,21 @@ public sealed class ModalLayer : Grid, IInputLayer
         _scope.Refresh();
     }
 
+    /// <summary>An icon with text beside it that wraps within the width it is given. (A
+    /// horizontal stack offers its children unlimited width, so text in one never wraps and
+    /// a long file name ran out of the dialog.)</summary>
+    public static Grid IconLine(Control icon, TextBlock text, double gap)
+    {
+        var line = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
+        icon.VerticalAlignment = VerticalAlignment.Top;
+        icon.Margin = new Thickness(0, Math.Max(0, (text.FontSize * 1.3 - icon.Height) / 2), 0, 0);
+        text.Margin = new Thickness(gap, 0, 0, 0);
+        line.Children.Add(icon);
+        Grid.SetColumn(text, 1);
+        line.Children.Add(text);
+        return line;
+    }
+
     /// <summary>A dialog. Returns the chosen button index, or <paramref name="cancelIndex"/> on B.</summary>
     public static ModalLayer Dialog(string title, string message, string[] buttons, int cancelIndex, Action<int> done, string icon = "info")
     {
@@ -114,7 +129,7 @@ public sealed class ModalLayer : Grid, IInputLayer
             row.Add(card.Item);
         }
         var body = Ui.V(28,
-            Ui.H(18, Icons.Make(icon, 44, T.Accent), Ui.Text(title, T.Title, T.Text, T.TitleWeight, TextWrapping.Wrap)),
+            IconLine(Icons.Make(icon, 44, T.Accent), Ui.Text(title, T.Title, T.Text, T.TitleWeight, TextWrapping.Wrap), 18),
             Ui.Text(message, T.Body, T.TextMuted, FontWeight.Medium, TextWrapping.Wrap),
             buttonPanel.Margin(0, 16, 0, 0));
         var card2 = Ui.Glass(body.Margin(56, 48), strong: true);

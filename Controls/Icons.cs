@@ -57,6 +57,16 @@ public static class Icons
         ["clock"] = ("M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z M12 7v5l3 2", false),
         ["tv"] = ("M3 6h18v12H3z M8 21h8", false),
         ["sun"] = ("M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z M12 2v2 M12 20v2 M4.9 4.9l1.4 1.4 M17.7 17.7l1.4 1.4 M2 12h2 M20 12h2 M4.9 19.1l1.4-1.4 M17.7 6.3l1.4-1.4", false),
+        // Weather: one cloud shape, low on its own, raised when something falls from it.
+        ["cloud"] = (Cloud(18), false),
+        ["cloud-sun"] = ("M8.5 2.5v1.5 M3 8h1.5 M4.6 4.1l1.1 1.1 M12.4 4.1l-1.1 1.1 M5.4 10.6a3.6 3.6 0 1 1 6.3-3.4 M9.5 20.5h8a3.6 3.6 0 0 0 .4-7.2 5 5 0 0 0-9.5 1.4 2.9 2.9 0 0 0 1.1 5.8z", false),
+        ["moon"] = ("M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z", false),
+        ["drizzle"] = (Cloud(15) + " M8 18.5v1 M12 19.5v1 M16 18.5v1", false),
+        ["rain"] = (Cloud(15) + " M8.5 18l-1.2 3 M12.5 18l-1.2 3 M16.5 18l-1.2 3", false),
+        ["snow"] = (Cloud(15) + " M8 18.5h.01 M12 18.5h.01 M16 18.5h.01 M10 21h.01 M14 21h.01", false),
+        ["storm"] = (Cloud(15) + " M13 15.5l-2.5 3.5h3l-2 3.5", false),
+        ["fog"] = ("M7 12.5a5.5 5.5 0 0 1 10.6-2.2A3.5 3.5 0 0 1 20 13 M4 16h16 M6 19.5h12", false),
+        ["calendar"] = ("M4 6h16v14H4z M4 10h16 M8 3v4 M16 3v4", false),
         ["speed"] = ("M12 14l4-4 M4.5 18a9 9 0 1 1 15 0", false),
         ["eye"] = ("M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z", false),
         ["eye-off"] = ("M3 3l18 18 M10.6 5.1A10 10 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3 3.8 M6.6 6.6C3.7 8.4 2 12 2 12s3.5 7 10 7a9.6 9.6 0 0 0 5.4-1.6", false),
@@ -78,6 +88,10 @@ public static class Icons
         ["warning"] = ("M12 3l10 18H2z M12 10v5 M12 18v.01", false),
         ["puzzle"] = ("M4 8h4a2 2 0 1 1 4 0h4v4a2 2 0 1 1 0 4v4H4v-4a2 2 0 1 0 0-4z", false),
     };
+
+    /// <summary>A cloud whose flat base sits at <paramref name="bottom"/> on the 24 grid.</summary>
+    private static string Cloud(double bottom) => FormattableString.Invariant(
+        $"M7 {bottom}h10a4 4 0 0 0 .6-7.96A6 6 0 0 0 6.1 {bottom - 7.4}a3.75 3.75 0 0 0 .9 7.4z");
 
     public static Geometry Geometry(string name) =>
         Avalonia.Media.Geometry.Parse(Paths.TryGetValue(name, out var p) ? p.Path : Paths["info"].Path);

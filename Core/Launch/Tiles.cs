@@ -122,6 +122,12 @@ public sealed class TileStore
             if (done.Add("logos"))
                 foreach (var t in tiles.Where(t => t.Logo.Length == 0))
                     t.Logo = Defaults().FirstOrDefault(d => d.Id == t.Id && d.Target == t.Target)?.Logo ?? "";
+            // 1.0.25: Cogas and Steam get their own icons instead of letters. Only tiles
+            // still without a logo, so a picture chosen in the editor stays.
+            if (done.Add("game-logos"))
+                foreach (var t in tiles.Where(t => t.Logo.Length == 0 && string.IsNullOrEmpty(t.Icon)))
+                    if (Defaults().FirstOrDefault(d => d.Id == t.Id && d.Kind == t.Kind && d.Target == t.Target && d.Id is "cogas" or "steam") is { } d)
+                        t.Logo = d.Logo;
             // 1.0.16: Prime Video plays inside Lounge now. 1.0.9 to 1.0.15 forced it into Edge.
             if (done.Add("prime-inside"))
                 foreach (var t in tiles.Where(t => t.IsWeb && t.Target.Contains("primevideo.com", StringComparison.OrdinalIgnoreCase)))
@@ -182,8 +188,8 @@ public sealed class TileStore
 
     public static List<Tile> Defaults() =>
     [
-        new() { Id = "cogas", Kind = TileKind.Cogas, Name = "Cogas", Color = "#6C4BFF", IsGame = true },
-        new() { Id = "steam", Kind = TileKind.Protocol, Name = "Steam Big Picture", Target = "steam://open/bigpicture", Color = "#1B2838", IsGame = true },
+        new() { Id = "cogas", Kind = TileKind.Cogas, Name = "Cogas", Color = "#6C4BFF", IsGame = true, Logo = "cogas" },
+        new() { Id = "steam", Kind = TileKind.Protocol, Name = "Steam Big Picture", Target = "steam://open/bigpicture", Color = "#1B2838", IsGame = true, Logo = "steam" },
         new() { Id = "starfall", Kind = TileKind.Builtin, Name = "Starfall", Target = "starfall", Color = "#7A1FA2", IsGame = true, Logo = "starfall" },
         new() { Id = "youtube", Kind = TileKind.Web, Name = "YouTube", Target = "https://www.youtube.com/tv", UserAgent = TvUserAgent, Color = "#FF0033" },
         new() { Id = "netflix", Kind = TileKind.Web, Name = "Netflix", Target = "https://www.netflix.com/browse", Color = "#E50914", AllowMouse = true, Logo = "netflix" },

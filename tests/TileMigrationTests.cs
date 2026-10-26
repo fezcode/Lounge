@@ -47,6 +47,30 @@ public class TileMigrationTests
     }
 
     [Fact]
+    public void Cogas_and_Steam_get_their_icons_once_unless_a_picture_was_chosen()
+    {
+        using var dir = new TempDir();
+        var path = dir.File("tiles.json");
+        // A 1.0.24 setup: no game logos yet, and a picture chosen for Steam in the editor.
+        var saved = TileStore.Defaults();
+        foreach (var t in saved.Where(t => t.Id is "cogas" or "steam")) t.Logo = "";
+        saved.Single(t => t.Id == "steam").Icon = @"C:\Pictures\steam.png";
+        var json = new System.Text.Json.JsonSerializerOptions { Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() } };
+        File.WriteAllText(path, System.Text.Json.JsonSerializer.Serialize(saved, json));
+        File.WriteAllLines(Path.ChangeExtension(path, ".migrations"), ["logos", "prime-inside", "hbomax", "starfall", "hellgate-gone", "browser", "bells-and-lamps-gone", "spotify-gone"]);
+
+        var store = new TileStore(path);
+        Assert.Equal("cogas", store.Find("cogas")!.Logo);
+        Assert.Equal("", store.Find("steam")!.Logo);
+
+        // Once only: a logo taken off later stays off.
+        var cogas = store.Find("cogas")!.Clone();
+        cogas.Logo = "";
+        store.Update(cogas);
+        Assert.Equal("", new TileStore(path).Find("cogas")!.Logo);
+    }
+
+    [Fact]
     public void Tiles_from_the_dropped_development_build_go_once()
     {
         using var dir = new TempDir();

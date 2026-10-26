@@ -41,6 +41,7 @@ public sealed class HomeScreen : Screen
     {
         _blink?.Stop();
         _carTimer?.Stop();
+        _barClock?.Stop();
     }
 
     private bool _shownOnce;
@@ -73,9 +74,13 @@ public sealed class HomeScreen : Screen
         _kodiShown = null;
         _programmeShown = null;
         _heroTitle = _heroSubtitle = null;
+        _sagaArt = null;
+        _sagaBar = null;
         _carPage.Clear();
         _carTimer?.Stop();
         _carTimer = null;
+        _barClock?.Stop();
+        _barClock = null;
         var (content, root) = T.Def.Layout switch
         {
             HomeLayout.BottomRibbon => LivingRoom(),
@@ -85,6 +90,9 @@ public sealed class HomeScreen : Screen
             HomeLayout.Programme => Programme(),
             HomeLayout.Cabinet => Cabinet(),
             HomeLayout.Dock => Dock(),
+            HomeLayout.Glance => Glance(),
+            HomeLayout.Sidebar => Sidebar(),
+            HomeLayout.Hall => Hall(),
             _ => Aurora(),
         };
         _building = false;
@@ -97,6 +105,7 @@ public sealed class HomeScreen : Screen
         UpdateHero(Focused);
         ShowCarPage(Focused, snap: true);
         _carTimer?.Start();
+        _barClock?.Start();
     }
 
     // ------------------------------------------------------------------ shared pieces
@@ -174,12 +183,17 @@ public sealed class HomeScreen : Screen
     private void UpdateHero(FocusItem? now)
     {
         if (now is null || !_entries.TryGetValue(now, out var e)) return;
-        if (_heroTitle is not null) _heroTitle.Text = e.Title;
+        if (_heroTitle is not null) _heroTitle.Text = T.Def.Layout == HomeLayout.Hall ? e.Title.ToUpperInvariant() : e.Title;
         if (_heroSubtitle is not null) _heroSubtitle.Text = e.Subtitle ?? "";
-        // CarPlay's wallpaper stays put; focus only lights the icon.
-        if (T.Def.Layout == HomeLayout.Dock) { L.Window.Backdrop.SetArt(null); return; }
+        // CarPlay's and Daylight's wallpapers stay put (dark art under Daylight's dark type
+        // would be unreadable); focus only lights the card.
+        if (T.Def.Layout is HomeLayout.Dock or HomeLayout.Glance) { L.Window.Backdrop.SetArt(null); return; }
+        // Saga shows the picture in its own place, on the right.
+        if (T.Def.Layout == HomeLayout.Hall) { L.Window.Backdrop.SetArt(null); ShowSagaItem(e); return; }
         var art = e.Tile is null ? e.Backdrop ?? e.Art ?? e.Video?.Art : null;
-        L.Window.Backdrop.SetArt(art, blur: T.Def.Layout != HomeLayout.TopTabsHero, strength: T.Def.Layout == HomeLayout.TopTabsHero ? 0.95 : 0.6);
+        // Apple TV-like layouts show the art sharp and full; the rest blur it into a wash.
+        var full = T.Def.Layout is HomeLayout.TopTabsHero or HomeLayout.Sidebar;
+        L.Window.Backdrop.SetArt(art, blur: !full, strength: full ? 0.95 : 0.6);
     }
 
     // ------------------------------------------------------------------ Aurora
@@ -213,8 +227,9 @@ public sealed class HomeScreen : Screen
         _heroHints = HintBar();
         var hero = Ui.V(14, _heroTitle, _heroSubtitle, _heroHints.Margin(0, 18, 0, 0));
         hero.VerticalAlignment = VerticalAlignment.Bottom;
-        hero.Margin = new Thickness(96, 0, 96, 30);
+        hero.Margin = new Thickness(96, 0, 96 + Clear(), 30);
         body.Children.Add(hero.Row(0));
+        if (Widgets.Strip() is { } widgets) body.Children.Add(widgets.Align(HorizontalAlignment.Right, VerticalAlignment.Bottom).Margin(0, 0, 96, 30).Row(0));
 
         var rows = root.Add(new FocusList(horizontal: false));
         var rowsPanel = new StackPanel { Spacing = 6 };
@@ -244,11 +259,13 @@ public sealed class HomeScreen : Screen
         _heroSubtitle = Ui.Text("", T.Heading, T.TextMuted);
         var greeting = Ui.Text(Greeting(), T.Heading, T.TextMuted, FontWeight.SemiBold);
         var hero = Ui.V(10, greeting, _heroTitle, _heroSubtitle);
-        hero.Margin = new Thickness(110, 90, 110, 0);
+        hero.Margin = new Thickness(110, 90, 110 + Clear(), 0);
         grid.Children.Add(hero.Row(0));
+        if (Widgets.Strip() is { } widgets) grid.Children.Add(widgets.Align(HorizontalAlignment.Right, VerticalAlignment.Top).Margin(0, 110, 110, 0).Row(0));
 
         // The preview row above the ribbon shows what the focused ribbon tile holds.
-        var previewHost = new ContentControl { Height = 330 };
+        // Lifted cards may reach past the host; the row inside does the clipping.
+        var previewHost = new ContentControl { Height = 342, ClipToBounds = false };
         var previewFocus = root.Add(new FocusList(horizontal: true));
         grid.Children.Add(previewHost.Row(1));
 
@@ -298,7 +315,8 @@ public sealed class HomeScreen : Screen
         foreach (var item in focus.Items.ToList()) _entries.Remove(item);
         focus.Clear();
         if (section is null) { host.Content = null; RefreshFocus(); return; }
-        var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 26, Margin = new Thickness(110, 10, 110, 30) };
+        // Room above for the focus lift: the row clips at its own edges.
+        var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 26, Margin = new Thickness(110, 22, 110, 30) };
         foreach (var e in section.Entries.Take(14))
         {
             var (w, h) = section.Shape == EntryShape.Poster ? (190.0, 285.0) : section.Shape == EntryShape.Square ? (230.0, 230.0) : (400.0, 225.0);
@@ -310,6 +328,18 @@ public sealed class HomeScreen : Screen
             new ScrollViewer { Content = panel, HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, ClipToBounds = false });
         RefreshFocus();
     }
+
+    /// <summary>The room text beside the corner widgets must leave them, and its long titles
+    /// end in an ellipsis rather than running underneath.</summary>
+    private double Clear(double w = Widgets.CompactW)
+    {
+        foreach (var t in new[] { _heroTitle, _heroSubtitle }) if (t is not null) t.TextTrimming = TextTrimming.CharacterEllipsis;
+        var width = Widgets.StripWidth(w: w);
+        return width > 0 ? width + 40 : 0;
+    }
+
+    /// <summary>Right margin that keeps a strip at the top clear of the clock in the corner.</summary>
+    private static double ClockGap => L.Settings.Bool(Lounge.Core.Settings.K.ShowClock) ? 230 : 96;
 
     private static string Greeting()
     {
@@ -374,7 +404,9 @@ public sealed class HomeScreen : Screen
         _kodiShown = dest.Title;
         foreach (var item in focus.Items.ToList()) _entries.Remove(item);
         focus.Clear();
-        var stack = new StackPanel { Spacing = 10, Margin = new Thickness(0, 160, 0, 0) };
+        var stack = new StackPanel { Spacing = 10, Margin = new Thickness(0, Widgets.Any ? 110 : 160, 0, 0) };
+        // The widgets head the content, above whatever the destination lines up.
+        if (Widgets.Strip() is { } widgets) stack.Children.Add(widgets.Margin(60, 0, 0, 20));
         void AddRow(HomeSection s, double w, double h)
         {
             var (view, f) = Row(s, w, h, captionsBelow: true, headerSize: T.Body, left: 60, spacing: 22);
@@ -448,8 +480,9 @@ public sealed class HomeScreen : Screen
         actionFocus.Add(openBtn.Item);
         actionFocus.Add(optsBtn.Item);
         var info = Ui.V(14, _heroTitle, _heroSubtitle, Ui.H(18, openBtn, optsBtn).Margin(0, 26, 0, 0));
-        info.Margin = new Thickness(110, 40, 110, 0);
+        info.Margin = new Thickness(110, 40, 110 + Clear(), 0);
         grid.Children.Add(info.Row(1));
+        if (Widgets.Strip() is { } widgets) grid.Children.Add(widgets.Align(HorizontalAlignment.Right, VerticalAlignment.Top).Margin(0, 40, 110, 0).Row(1));
 
         var lower = new StackPanel { Spacing = 0, Margin = new Thickness(0, 40, 0, 0) };
         var lowerFocus = root.Add(new FocusList(horizontal: false));
@@ -489,6 +522,8 @@ public sealed class HomeScreen : Screen
         {
             var heroFocus = root.Add(new FocusList(horizontal: true, rememberIndex: true));
             var heroRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 14, Margin = new Thickness(96, 20, 96, 30) };
+            // The widgets lead the row as tiles of their own, the height of the small tiles.
+            if (Widgets.Strip(Orientation.Vertical, 14, 300, 173) is { } widgets) heroRow.Children.Add(widgets);
             var big = EntryCard(hero[0], 640, 360, caption: false, inside: true);
             heroRow.Children.Add(big);
             heroFocus.Add(big.Item);
@@ -541,11 +576,13 @@ public sealed class HomeScreen : Screen
         var house = Ui.Text("LOUNGE  ·  PICTURE HOUSE", T.Caption, T.Accent, FontWeight.Medium, letterSpacing: 5);
         var tonight = Ui.Display(Ui.Text($"Tonight, {now:dddd d MMMM}", 40, T.TextMuted), italic: true);
         var rule = new Border { Height = 1, Background = T.Line, Margin = new Thickness(0, 22, 0, 0) };
-        grid.Children.Add(Ui.V(10, house, tonight, rule).Margin(96, 56, 96, 0).Col(0, 2).Row(0));
+        // The widgets share the masthead's height with the clock, so they stop short of it.
+        grid.Children.Add(Ui.V(10, house, tonight, rule).Margin(96, 56, ClockGap + Clear(), 0).Col(0, 2).Row(0));
+        if (Widgets.Strip() is { } widgets) grid.Children.Add(widgets.Align(HorizontalAlignment.Right, VerticalAlignment.Top).Margin(0, 56, ClockGap, 0).Col(0, 2).Row(0));
 
         var indexFocus = root.Add(new FocusList(horizontal: false, rememberIndex: true));
         var index = new StackPanel { Spacing = 2, Margin = new Thickness(96, 34, 0, 0) };
-        var featureHost = new ContentControl();
+        var featureHost = new ContentControl { ClipToBounds = false };
         var featureFocus = root.Add(new FocusList(horizontal: false, rememberIndex: false));
         var number = 0;
         foreach (var d in HomeModel.Menu())
@@ -637,7 +674,8 @@ public sealed class HomeScreen : Screen
         void AddRow(HomeSection s, string label, double w, double h)
         {
             var list = new FocusList(horizontal: true);
-            var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 24, Margin = new Thickness(0, 16, 96, 20) };
+            // Each row clips at its own left edge as well: the first card starts a little in.
+            var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 24, Margin = new Thickness(10, 16, 96, 20) };
             foreach (var e in s.Entries.Take(12))
             {
                 var card = EntryCard(e, w, h);
@@ -645,7 +683,7 @@ public sealed class HomeScreen : Screen
                 list.Add(card.Item);
             }
             stack.Children.Add(Ui.V(0, style.Header(label),
-                new ScrollViewer { Content = panel, HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, ClipToBounds = false }));
+                new ScrollViewer { Content = panel, Margin = new Thickness(-10, 0, 0, 0), HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, ClipToBounds = false }));
             focus.Add(list);
         }
 
@@ -707,11 +745,13 @@ public sealed class HomeScreen : Screen
         marquee.Children.Add(Ui.Display(Ui.Text("LOUNGE", 72, T.Danger)).Margin(7, 7, 0, 0));
         marquee.Children.Add(Ui.Display(Ui.Text("LOUNGE", 72, T.Accent)));
         var subtitle = Ui.Display(Ui.Text("1UP  *  SELECT YOUR STAGE", 20, T.TextMuted));
-        grid.Children.Add(Ui.V(18, marquee, subtitle).Margin(96, 56, 96, 0).Col(0, 2).Row(0));
+        // Pixel type runs wide: the widgets get more room, and stop short of the clock.
+        grid.Children.Add(Ui.V(18, marquee, subtitle).Margin(96, 56, ClockGap + Clear(w: 310), 0).Col(0, 2).Row(0));
+        if (Widgets.Strip(w: 310) is { } widgets) grid.Children.Add(widgets.Align(HorizontalAlignment.Right, VerticalAlignment.Top).Margin(0, 56, ClockGap, 0).Col(0, 2).Row(0));
 
         var menuFocus = root.Add(new FocusList(horizontal: false, rememberIndex: true));
         var menu = new StackPanel { Spacing = 6, Margin = new Thickness(96, 44, 0, 0) };
-        var lineupHost = new ContentControl();
+        var lineupHost = new ContentControl { ClipToBounds = false };
         var lineupFocus = root.Add(new FocusList(horizontal: false, rememberIndex: false));
         Control? activeCursor = null;
         var destinations = HomeModel.Menu();
@@ -937,7 +977,17 @@ public sealed class HomeScreen : Screen
         grid.Children.Add(bigCard.Col(0).Row(0, 3));
 
         grid.Children.Add(NowPlayingWidget(focus, smallW, smallH).Col(2).Row(0));
-        grid.Children.Add(TodayWidget(focus, smallW, smallH, sections).Col(2).Row(2));
+        // Below it the weather and the month, side by side when both are on; with neither,
+        // today's card.
+        var glass = new SolidColorBrush(Color.FromArgb(235, 28, 28, 30));
+        if (Widgets.WeatherOn && Widgets.CalendarOn)
+        {
+            var half = Math.Floor((smallW - gap) / 2);
+            grid.Children.Add(Ui.H(gap, Widgets.Weather(half, smallH, glass), Widgets.Calendar(smallW - gap - half, smallH, glass)).Col(2).Row(2));
+        }
+        else if (Widgets.WeatherOn) grid.Children.Add(Widgets.Weather(smallW, smallH, glass).Col(2).Row(2));
+        else if (Widgets.CalendarOn) grid.Children.Add(Widgets.Calendar(smallW, smallH, glass).Col(2).Row(2));
+        else grid.Children.Add(TodayWidget(focus, smallW, smallH, sections).Col(2).Row(2));
         return grid;
     }
 
@@ -1047,6 +1097,482 @@ public sealed class HomeScreen : Screen
         _entries[card.Item] = open with { Title = RailKey + "today" };
         focus.Add(card.Item);
         return card;
+    }
+
+    // ------------------------------------------------------------------ Daylight (glance)
+
+    private StackPanel? _upNextDots;
+
+    /// <summary>A light TV launcher: the destinations as pills in a frosted capsule at the
+    /// top, the focused item's title large under them with today's date beside it, an Up
+    /// Next panel of things to resume beside the weather, and the app tiles along the bottom.</summary>
+    private (Control, FocusNode) Glance()
+    {
+        var grid = Ui.Grid("*", "Auto,Auto,Auto,*");
+        var root = new FocusList(horizontal: false);
+        var sections = HomeModel.Sections().ToDictionary(s => s.Id);
+        const double side = 96;
+        var width = Math.Max(1200, L.Window.DesignWidth) - side * 2;
+
+        // Tabs: "Home" lit as where you are, then a pill for each destination.
+        var tabsFocus = root.Add(new FocusList(horizontal: true, rememberIndex: false));
+        var tabs = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+        tabs.Children.Add(new Border
+        {
+            Background = T.SurfaceStrong, CornerRadius = new CornerRadius(24),
+            BoxShadow = new BoxShadows(new BoxShadow { OffsetY = 2, Blur = 8, Color = Color.FromArgb(30, 0, 0, 0) }),
+            Child = Ui.Text("Home", T.Caption, T.Text, FontWeight.SemiBold).Margin(24, 9),
+        });
+        foreach (var d in HomeModel.Menu())
+        {
+            var label = Ui.Text(d.Title, T.Caption, T.TextMuted, FontWeight.SemiBold);
+            var card = new Card(label.Margin(22, 9), 24) { FocusScale = 1.04, ShowRing = false, ShowGlow = false };
+            card.Body.Background = Brushes.Transparent;
+            card.Focused += f => { card.Body.Background = f ? T.Text : Brushes.Transparent; label.Foreground = f ? T.SurfaceStrong : T.TextMuted; };
+            card.Item.Activate = d.Open;
+            _entries[card.Item] = d;
+            tabs.Children.Add(card);
+            tabsFocus.Add(card.Item);
+        }
+        var capsule = new Border
+        {
+            Background = T.Surface, CornerRadius = new CornerRadius(30), Padding = new Thickness(6),
+            BorderBrush = T.Line, BorderThickness = new Thickness(1),
+            HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 30, 0, 0),
+            Child = tabs,
+        };
+        grid.Children.Add(capsule.Row(0));
+
+        // The focused item's title, and today beside it.
+        var calendar = Widgets.CalendarOn ? Widgets.Calendar(Widgets.CompactW, 130) : null;
+        _heroTitle = Ui.Text("", 68, T.Text, T.TitleWeight);
+        _heroSubtitle = Ui.Text("", T.Body, T.TextMuted);
+        foreach (var t in new[] { _heroTitle, _heroSubtitle }) { t.TextTrimming = TextTrimming.CharacterEllipsis; t.MaxWidth = width - (calendar is null ? 0 : Widgets.CompactW + 40); }
+        var heroRow = new Grid { Margin = new Thickness(side, 50, side, 0) };
+        heroRow.Children.Add(Ui.V(8, _heroTitle, _heroSubtitle).Align(HorizontalAlignment.Left, VerticalAlignment.Bottom));
+        if (calendar is not null) heroRow.Children.Add(calendar.Align(HorizontalAlignment.Right, VerticalAlignment.Bottom));
+        grid.Children.Add(heroRow.Row(1));
+
+        // Up Next beside the weather.
+        const double panelH = 410, gap = 24;
+        var weatherW = Widgets.WeatherOn ? Math.Round(width * 0.32) : 0;
+        var upNextW = width - (weatherW > 0 ? weatherW + gap : 0);
+        var middle = new Grid { Margin = new Thickness(side, 34, side, 0), Height = panelH };
+        middle.ColumnDefinitions = new ColumnDefinitions(weatherW > 0 ? $"{upNextW},{gap},{weatherW}" : "*");
+        middle.Children.Add(UpNextPanel(root, sections, upNextW, panelH).Col(0));
+        if (weatherW > 0) middle.Children.Add(Widgets.Weather(weatherW, panelH).Col(2));
+        grid.Children.Add(middle.Row(2));
+
+        // The apps along the bottom.
+        var appsFocus = root.Add(new FocusList(horizontal: true));
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 22, Margin = new Thickness(side, 40, side, 30) };
+        foreach (var e in HomeModel.Apps(web: false).Concat(HomeModel.Apps(web: true)).Where(a => a.Tile is not null))
+        {
+            var card = EntryCard(e, 272, 153, caption: false);
+            row.Children.Add(card);
+            appsFocus.Add(card.Item);
+        }
+        grid.Children.Add(new ScrollViewer
+        {
+            Content = row, ClipToBounds = false, VerticalAlignment = VerticalAlignment.Top,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        }.Row(3));
+        root.Index = 1;
+        return (grid, root);
+    }
+
+    /// <summary>Up Next: what to resume, else what's new, three cards to a page with dots
+    /// under them that follow focus.</summary>
+    private Control UpNextPanel(FocusList root, Dictionary<string, HomeSection> sections, double w, double h)
+    {
+        var source = new[] { "jump", "videos", "music", "apps" }
+            .Select(sections.GetValueOrDefault)
+            .FirstOrDefault(s => s is not null && s.Entries.Any(e => e.Tile is not null || e.Video is not null || e.Art is not null || e.Progress >= 0))
+            ?? sections.Values.FirstOrDefault();
+        var entries = source?.Entries.Take(12).ToList() ?? HomeModel.Destinations().Take(3).ToList();
+        const double pad = 28, lift = 14, spacing = 20;
+        var cardW = Math.Floor((w - pad * 2 - spacing * 2) / 3);
+        // 16:9, or flatter when the captions under the cards would leave the panel.
+        var cardH = Math.Min(Math.Round(cardW * 9 / 16), h - 180);
+        var focus = root.Add(new FocusList(horizontal: true));
+        var strip = new StackPanel { Orientation = Orientation.Horizontal, Spacing = spacing, Margin = new Thickness(lift, lift, lift, 0) };
+        _upNextDots = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, HorizontalAlignment = HorizontalAlignment.Center };
+        var pages = Math.Max(1, (entries.Count + 2) / 3);
+        for (int p = 0; p < pages; p++) _upNextDots.Children.Add(new Border { Width = 9, Height = 9, CornerRadius = new CornerRadius(4.5), Background = T.TextFaint });
+        _upNextDots.IsVisible = pages > 1;
+        for (int i = 0; i < entries.Count; i++)
+        {
+            var e = entries[i];
+            // Ring and lift only: the panel clips, and a clipped shadow shows its edges.
+            var card = EntryCard(e, cardW, cardH);
+            card.ShowGlow = false;
+            var page = i / 3;
+            card.Focused += f => { if (f) LightUpNext(page); };
+            strip.Children.Add(Captioned(card, e, cardW));
+            focus.Add(card.Item);
+        }
+        LightUpNext(0);
+        // The cards scroll inside the panel; the margin leaves room for the focus lift.
+        var scroll = new ScrollViewer
+        {
+            Content = strip, ClipToBounds = true, Margin = new Thickness(-lift, -lift, -lift, 0),
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        };
+        var label = Ui.Text(source?.Id == "jump" ? "Up Next" : source?.Title ?? "Up Next", T.Caption, T.TextMuted, FontWeight.SemiBold);
+        var layout = Ui.Grid("*", "Auto,*,Auto");
+        layout.Children.Add(label.Margin(0, 0, 0, 14).Row(0));
+        layout.Children.Add(scroll.Row(1));
+        layout.Children.Add(_upNextDots.Row(2));
+        return new Border
+        {
+            Width = w, Height = h, CornerRadius = new CornerRadius(T.RadiusLarge),
+            Background = T.Surface, BorderBrush = T.Line, BorderThickness = new Thickness(1),
+            Padding = new Thickness(pad, 22, pad, 18),
+            Child = layout,
+        };
+    }
+
+    private void LightUpNext(int page)
+    {
+        if (_upNextDots is null) return;
+        for (int i = 0; i < _upNextDots.Children.Count; i++)
+            ((Border)_upNextDots.Children[i]).Background = i == page ? T.Text : T.TextFaint;
+    }
+
+    // ------------------------------------------------------------------ Liquid Glass (sidebar)
+
+    /// <summary>Liquid Glass: the sidebar's clock, while Home is up.</summary>
+    private DispatcherTimer? _barClock;
+
+    /// <summary>A floating liquid glass sidebar down the left (who's watching and the time,
+    /// Search, Home, the destinations, then the apps with their icons in circles), and the
+    /// focused item's art filling the screen behind its title and an Up Next row.</summary>
+    private (Control, FocusNode) Sidebar()
+    {
+        var grid = new Grid();
+        var root = new FocusList(horizontal: true);
+        var sections = HomeModel.Sections().ToDictionary(s => s.Id);
+        const double barX = 40, barW = 440, contentX = barX + barW + 64;
+
+        // The art behind stays under readable type: dark to the left and along the bottom.
+        grid.Children.Add(new Border { Background = Ui.HorizontalFade(Colors.Black, 0.75, 0), Width = 1200, HorizontalAlignment = HorizontalAlignment.Left, IsHitTestVisible = false });
+        grid.Children.Add(new Border { Background = Ui.VerticalFade(Colors.Black, 0, 0.9, 0.4, 1), IsHitTestVisible = false });
+
+        // ---- the bar
+        var barFocus = root.Add(new FocusList(horizontal: false, rememberIndex: true));
+        var list = new StackPanel { Spacing = 2 };
+        Card Row(HomeEntry e, Func<bool, Control> icon, bool here = false)
+        {
+            var label = Ui.Text(e.Title, T.Body, T.Text, FontWeight.Medium);
+            label.TextTrimming = TextTrimming.CharacterEllipsis;
+            label.VerticalAlignment = VerticalAlignment.Center;
+            var iconHost = new ContentControl { Content = icon(false), VerticalAlignment = VerticalAlignment.Center };
+            var line = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
+            line.Children.Add(iconHost);
+            line.Children.Add(label.Margin(18, 0, 0, 0).Col(1));
+            // The list scrolls inside a clip, so the pill lights up without growing past its edges.
+            var card = new Card(line.Margin(14, 10), 26) { FocusScale = 1.0, ShowRing = false, ShowGlow = false, HorizontalAlignment = HorizontalAlignment.Stretch };
+            // Where you are keeps a faint pill; focus is a white one with dark type.
+            var resting = here ? T.WithAlpha(Colors.White, 0.12) : Brushes.Transparent;
+            card.Body.Background = resting;
+            card.Focused += f =>
+            {
+                card.Body.Background = f ? Brushes.White : resting;
+                label.Foreground = f ? Brushes.Black : T.Text;
+                iconHost.Content = icon(f);
+            };
+            card.Item.Activate = e.Open;
+            card.Item.Secondary = e.Options;
+            _entries[card.Item] = e;
+            list.Children.Add(card);
+            barFocus.Add(card.Item);
+            return card;
+        }
+        // A glyph in a small round well, dark on the white pill.
+        Func<bool, Control> Glyph(string glyph) => f => new Border
+        {
+            Width = 44, Height = 44, CornerRadius = new CornerRadius(22),
+            Background = f ? T.WithAlpha(Colors.Black, 0.08) : T.WithAlpha(Colors.White, 0.12),
+            Child = Icons.Make(glyph, 24, f ? Brushes.Black : T.Text).Align(HorizontalAlignment.Center, VerticalAlignment.Center),
+        };
+        // An app's own icon, in a circle.
+        Func<bool, Control> Badge(HomeEntry e) => _ => new Border
+        {
+            Width = 44, Height = 44, CornerRadius = new CornerRadius(22), ClipToBounds = true,
+            Child = HomeModel.Art(e, 44, 44),
+        };
+
+        Row(new HomeEntry("Search", "Your films, music and apps", null, "search", "#8E8E93", () => L.Window.Push(new SearchScreen())), Glyph("search"));
+        Row(new HomeEntry("Home", Greeting(), null, "home", "#8E8E93", () => L.Play(Lounge.Core.Audio.UiSound.Select)), Glyph("home"), here: true);
+        foreach (var d in HomeModel.Menu()) Row(d, d.Art is not null ? Badge(d) : Glyph(d.Icon));
+        var apps = HomeModel.Apps(web: false).Concat(HomeModel.Apps(web: true)).Where(a => a.Tile is not null).ToList();
+        if (apps.Count > 0)
+        {
+            list.Children.Add(Ui.Text("Apps & Websites", T.Caption, T.TextFaint, FontWeight.SemiBold).Margin(16, 22, 0, 8));
+            foreach (var a in apps) Row(a, Badge(a));
+        }
+
+        // Who's watching, and the time.
+        var name = Environment.UserName is { Length: > 0 } u ? char.ToUpper(u[0]) + u[1..] : "You";
+        var avatar = new Border { Width = 48, Height = 48, CornerRadius = new CornerRadius(24), ClipToBounds = true, Child = Ui.Monogram(name, "#5E5CE6", 48) };
+        var who = Ui.Text(name, T.Body, T.Text, FontWeight.SemiBold);
+        who.TextTrimming = TextTrimming.CharacterEllipsis;
+        who.VerticalAlignment = VerticalAlignment.Center;
+        var time = Ui.Text("", T.Body, T.TextMuted, FontWeight.Medium);
+        time.VerticalAlignment = VerticalAlignment.Center;
+        void Tick()
+        {
+            time.IsVisible = L.Settings.Bool(Lounge.Core.Settings.K.ShowClock);
+            time.Text = DateTime.Now.ToString(L.Settings.Bool(Lounge.Core.Settings.K.Clock24h) ? "HH:mm" : "h:mm tt");
+        }
+        Tick();
+        _barClock = new DispatcherTimer(TimeSpan.FromSeconds(5), DispatcherPriority.Background, (_, _) => Tick());
+        _barClock.Stop();
+        var header = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Margin = new Thickness(16, 4, 16, 18) };
+        header.Children.Add(avatar);
+        header.Children.Add(who.Margin(16, 0, 12, 0).Col(1));
+        header.Children.Add(time.Col(2));
+
+        var scroll = new ScrollViewer { Content = list.Margin(4, 2, 4, 10), VerticalScrollBarVisibility = ScrollBarVisibility.Hidden, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        var inside = Ui.Grid("*", "Auto,*");
+        inside.Children.Add(header.Row(0));
+        inside.Children.Add(scroll.Row(1));
+        var glass = new Grid();
+        glass.Children.Add(new Border { Background = Ui.Sheen(), CornerRadius = new CornerRadius(40), IsHitTestVisible = false });
+        glass.Children.Add(inside.Margin(14, 22, 14, 14));
+        var bar = new Border
+        {
+            Width = barW, Margin = new Thickness(barX, 40, 0, 40), HorizontalAlignment = HorizontalAlignment.Left,
+            CornerRadius = new CornerRadius(40), ClipToBounds = true,
+            Background = new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
+                GradientStops = { new GradientStop(Color.FromArgb(120, 48, 48, 54), 0), new GradientStop(Color.FromArgb(165, 18, 18, 22), 1) },
+            },
+            BorderBrush = Ui.Rim(), BorderThickness = new Thickness(1.5),
+            Child = glass,
+        };
+        grid.Children.Add(new Border
+        {
+            // The shadow sits on its own layer: on the clipping bar it would be cut off.
+            Width = barW, Margin = bar.Margin, HorizontalAlignment = HorizontalAlignment.Left, CornerRadius = new CornerRadius(40),
+            BoxShadow = new BoxShadows(new BoxShadow { OffsetY = 20, Blur = 60, Color = Color.FromArgb(140, 0, 0, 0) }),
+            Background = T.WithAlpha(Colors.Black, 0.01), IsHitTestVisible = false,
+        });
+        grid.Children.Add(bar);
+
+        // ---- the row, and the focused item's title above it
+        var source = new[] { "jump", "videos", "music", "apps" }
+            .Select(sections.GetValueOrDefault)
+            .FirstOrDefault(s => s is not null && s.Entries.Any(e => e.Tile is not null || e.Video is not null || e.Art is not null || e.Progress >= 0))
+            ?? sections.Values.FirstOrDefault();
+        var rowFocus = root.Add(new FocusList(horizontal: true));
+        var cards = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 26, Margin = new Thickness(contentX, 18, 96, 56) };
+        foreach (var e in (source?.Entries ?? HomeModel.Destinations()).Take(16))
+        {
+            var card = EntryCard(e, 330, 186);
+            cards.Children.Add(Captioned(card, e, 330));
+            rowFocus.Add(card.Item);
+            _fallbackFocus ??= card.Item;
+        }
+        var rowLabel = Ui.Text(source?.Id == "jump" ? "Up Next" : source?.Title ?? "Up Next", T.Body, T.Text, FontWeight.SemiBold).Margin(contentX, 0, 0, 0);
+        var row = Ui.V(0, rowLabel, new ScrollViewer
+        {
+            Content = cards, ClipToBounds = false,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        });
+        row.VerticalAlignment = VerticalAlignment.Bottom;
+        grid.Children.Add(row);
+
+        _heroTitle = Ui.Text("", 76, T.Text, T.TitleWeight);
+        _heroSubtitle = Ui.Text("", T.Heading, T.TextMuted);
+        foreach (var t in new[] { _heroTitle, _heroSubtitle }) t.TextTrimming = TextTrimming.CharacterEllipsis;
+        var hero = Ui.V(10, _heroTitle, _heroSubtitle);
+        hero.VerticalAlignment = VerticalAlignment.Bottom;
+        hero.Margin = new Thickness(contentX, 0, 96, 400);
+        grid.Children.Add(hero);
+
+        if (Widgets.Strip() is { } widgets) grid.Children.Add(widgets.Align(HorizontalAlignment.Right, VerticalAlignment.Top).Margin(0, 40, 56, 0));
+        root.Index = 1;
+        return (grid, root);
+    }
+
+    // ------------------------------------------------------------------ Saga (hall)
+
+    private ContentControl? _sagaArt;
+    private Border? _sagaBar;
+    private string? _sagaList;
+    /// <summary>Saga: the destination last chosen, so coming back reopens it.</summary>
+    private string? _sagaDest;
+
+    /// <summary>A northern hall's inventory: a rune and a knotted rule over the name, the
+    /// destinations as light uppercase words each with its rune, the chosen one's contents
+    /// as a plain list, and on the right the focused thing's picture fading into the dark
+    /// above a smoked-glass card with its name. Focus never lifts: the choice brightens, a
+    /// band of light falls behind it and a marker appears beside it.</summary>
+    private (Control, FocusNode) Hall()
+    {
+        var grid = Ui.Grid("560,560,*", "Auto,*,Auto");
+        var root = new FocusList(horizontal: true);
+        var sections = HomeModel.Sections().ToDictionary(s => s.Id);
+        var silver = new SolidColorBrush(Nordic.Silver);
+
+        var title = Ui.H(18, Nordic.Rune("ingwaz", 34, silver), Ui.Text("LOUNGE", 36, T.Text, FontWeight.Light, letterSpacing: 14).Align(HorizontalAlignment.Left, VerticalAlignment.Center));
+        var masthead = Ui.V(14, title, Nordic.Divider().Also(x => x.Width = 420).Align(HorizontalAlignment.Left, VerticalAlignment.Top));
+        grid.Children.Add(masthead.Margin(96, 56, 0, 0).Col(0, 2).Row(0));
+
+        // The destinations.
+        var menuFocus = root.Add(new FocusList(horizontal: false, rememberIndex: true));
+        var menu = new StackPanel { Spacing = 4, Margin = new Thickness(96, 40, 30, 0) };
+        var listHost = new ContentControl();
+        var listFocus = root.Add(new FocusList(horizontal: false, rememberIndex: false));
+        var lines = new List<(string Title, TextBlock Label, ContentControl Rune, Control Marker)>();
+        void Paint(string chosen, bool focused)
+        {
+            foreach (var (t, label, rune, marker) in lines)
+            {
+                var on = t == chosen;
+                label.Foreground = on ? (focused ? T.Text : T.TextMuted) : T.TextFaint;
+                rune.Content = Nordic.Rune(Nordic.RuneFor(t), 28, on ? (focused ? T.Text : T.TextMuted) : T.TextFaint);
+                marker.Opacity = on ? (focused ? 1 : 0.45) : 0;
+            }
+        }
+        var destinations = HomeModel.Menu();
+        var reopen = destinations.FirstOrDefault(x => x.Title == (_sagaDest ?? "Videos")) ?? destinations[0];
+        foreach (var d in destinations)
+        {
+            var sid = d.Title switch { "Videos" => "videos", "Music" => "music", "Apps & Games" => "apps", "Web" => "web", _ => null };
+            var marker = Nordic.Marker(26);
+            var rune = new ContentControl { VerticalAlignment = VerticalAlignment.Center };
+            var label = Ui.Text(d.Title.ToUpperInvariant(), 38, T.TextFaint, FontWeight.Light, letterSpacing: 4);
+            label.VerticalAlignment = VerticalAlignment.Center;
+            var line = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*") };
+            line.Children.Add(marker.Margin(0, 0, 14, 0));
+            line.Children.Add(rune.Margin(0, 0, 18, 0).Col(1));
+            line.Children.Add(label.Col(2));
+            lines.Add((d.Title, label, rune, marker));
+            var card = new Card(line.Margin(0, 6), 0) { FocusScale = 1.0, ShowRing = false, ShowGlow = false, HorizontalAlignment = HorizontalAlignment.Stretch };
+            card.Body.Background = Brushes.Transparent;
+            card.Focused += f =>
+            {
+                if (!f) { Paint(_sagaDest ?? d.Title, focused: false); return; }
+                _sagaDest = d.Title;
+                Paint(d.Title, focused: true);
+                _contentDebounce?.Dispose();
+                _contentDebounce = DispatcherTimer.RunOnce(() => FillSaga(listHost, listFocus, d, sid is null ? null : sections.GetValueOrDefault(sid), sections.GetValueOrDefault("jump")), TimeSpan.FromMilliseconds(130));
+            };
+            card.Item.Activate = d.Open;
+            _entries[card.Item] = d;
+            menu.Children.Add(card);
+            menuFocus.Add(card.Item);
+            if (d == reopen) _fallbackFocus = card.Item;
+        }
+        Paint(reopen.Title, focused: false);
+        grid.Children.Add(menu.Col(0).Row(1));
+        grid.Children.Add(Nordic.Upright().Align(HorizontalAlignment.Left, VerticalAlignment.Stretch).Margin(0, 20, 0, 20).Col(1).Row(1));
+        grid.Children.Add(listHost.Margin(30, 30, 40, 0).Col(1).Row(1));
+
+        // The focused thing: weather and the date above, its picture fading into the dark,
+        // and its card.
+        var right = Ui.Grid("*", "Auto,*,Auto");
+        // Level with the masthead, stopping short of the clock in the corner.
+        if (Widgets.Strip() is { } widgets) right.Children.Add(widgets.Align(HorizontalAlignment.Right, VerticalAlignment.Top).Margin(0, 56, ClockGap - 96, 0).Row(0));
+        _sagaArt = new ContentControl { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        right.Children.Add(_sagaArt.Row(1));
+        _heroTitle = Ui.Text("", 44, T.Text, FontWeight.Light, letterSpacing: 3);
+        _heroSubtitle = Ui.Text("", T.Body, T.TextMuted);
+        foreach (var t in new[] { _heroTitle, _heroSubtitle }) { t.TextTrimming = TextTrimming.CharacterEllipsis; t.HorizontalAlignment = HorizontalAlignment.Center; }
+        // Progress, as a bar drawn like a stamina meter: a fine frame with a fill.
+        _sagaBar = new Border { Height = 6, Background = new SolidColorBrush(Nordic.Silver), HorizontalAlignment = HorizontalAlignment.Left };
+        var meter = new Border
+        {
+            Width = 360, Height = 12, Padding = new Thickness(2), BorderBrush = silver, BorderThickness = new Thickness(1),
+            Background = T.WithAlpha(Colors.Black, 0.5), HorizontalAlignment = HorizontalAlignment.Center, Child = _sagaBar,
+        };
+        var card2 = Nordic.Frame(Ui.V(10, _heroTitle, _heroSubtitle, meter.Margin(0, 8, 0, 0)));
+        right.Children.Add(card2.Margin(0, 16, 0, 0).Row(2));
+        grid.Children.Add(right.Margin(20, 0, 96, 24).Col(2).Row(0, 2));
+
+        // The hints, on a dark band under a knotted rule.
+        var band = Ui.V(18, Nordic.Divider().Margin(96, 0), HintBar().Margin(96, 0, 0, 0));
+        band.Margin = new Thickness(0, 0, 0, 36);
+        grid.Children.Add(new Border { Background = Ui.VerticalFade(Colors.Black, 0, 0.7), IsHitTestVisible = false }.Col(0, 3).Row(2));
+        grid.Children.Add(band.Col(0, 3).Row(2));
+
+        _sagaList = null;
+        FillSaga(listHost, listFocus, reopen, reopen.Title switch { "Videos" => sections.GetValueOrDefault("videos"), "Music" => sections.GetValueOrDefault("music"), "Apps & Games" => sections.GetValueOrDefault("apps"), "Web" => sections.GetValueOrDefault("web"), _ => null }, sections.GetValueOrDefault("jump"));
+        return (grid, root);
+    }
+
+    /// <summary>The chosen destination's contents as an inventory list: names on the left,
+    /// what they hold or how much is left on the right.</summary>
+    private void FillSaga(ContentControl host, FocusList focus, HomeEntry dest, HomeSection? section, HomeSection? jump)
+    {
+        if (_sagaList == dest.Title && host.Content is not null) return;
+        _sagaList = dest.Title;
+        foreach (var item in focus.Items.ToList()) _entries.Remove(item);
+        focus.Clear();
+        var items = new List<HomeEntry>();
+        if (dest.Title == "Videos" && jump is not null) items.AddRange(jump.Entries.Take(6));
+        if (section is not null) items.AddRange(section.Entries);
+        if (items.Count == 0) items.Add(dest);
+        var stack = new StackPanel { Spacing = 0 };
+        stack.Children.Add(Ui.Text(dest.Title.ToUpperInvariant(), T.Caption, T.TextMuted, FontWeight.SemiBold, letterSpacing: 4).Margin(48, 0, 0, 14));
+        foreach (var e in items.Take(40))
+        {
+            var name = Ui.Text(e.Title, 30, T.TextMuted, FontWeight.Normal);
+            name.TextTrimming = TextTrimming.CharacterEllipsis;
+            var side = Ui.Text(e.Subtitle ?? "", T.Caption, T.TextFaint);
+            side.TextTrimming = TextTrimming.CharacterEllipsis;
+            side.MaxWidth = 150;
+            side.VerticalAlignment = VerticalAlignment.Center;
+            var marker = Nordic.Marker(20);
+            marker.Opacity = 0;
+            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
+            row.Children.Add(marker.Margin(0, 0, 10, 0));
+            row.Children.Add(name.Col(1));
+            row.Children.Add(side.Margin(16, 0, 0, 0).Col(2));
+            var card = new Card(row.Margin(8, 8, 16, 8), 0) { FocusScale = 1.0, ShowRing = false, ShowGlow = false, HorizontalAlignment = HorizontalAlignment.Stretch };
+            card.Body.Background = Brushes.Transparent;
+            card.Focused += f =>
+            {
+                card.Body.Background = f ? Ui.HorizontalFade(Colors.White, 0.14, 0) : Brushes.Transparent;
+                name.Foreground = f ? T.Text : T.TextMuted;
+                side.Foreground = f ? T.TextMuted : T.TextFaint;
+                marker.Opacity = f ? 1 : 0;
+            };
+            card.Item.Activate = e.Open;
+            card.Item.Secondary = e.Options;
+            _entries[card.Item] = e;
+            stack.Children.Add(card);
+            focus.Add(card.Item);
+        }
+        host.Content = new ScrollViewer { Content = stack, VerticalScrollBarVisibility = ScrollBarVisibility.Hidden, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        if (!_building) RefreshFocus();
+    }
+
+    /// <summary>The focused thing on the right: its picture, fading out at its edges into the
+    /// night like a model in an inventory, and its progress on the meter.</summary>
+    private void ShowSagaItem(HomeEntry e)
+    {
+        if (_sagaArt is null) return;
+        const double w = 640, h = 360;
+        var art = new Border
+        {
+            Width = w, Height = h, Child = HomeModel.Art(e, w, h),
+            OpacityMask = new RadialGradientBrush
+            {
+                RadiusX = new RelativeScalar(0.5, RelativeUnit.Relative), RadiusY = new RelativeScalar(0.5, RelativeUnit.Relative),
+                GradientStops = { new GradientStop(Colors.Black, 0.55), new GradientStop(Colors.Transparent, 1) },
+            },
+        };
+        _sagaArt.Content = art;
+        if (_sagaBar?.Parent is Border meter)
+        {
+            meter.IsVisible = e.Progress >= 0;
+            _sagaBar.Width = Math.Max(2, (meter.Width - 6) * Math.Clamp(e.Progress, 0, 1));
+        }
     }
 
     // ------------------------------------------------------------------ input

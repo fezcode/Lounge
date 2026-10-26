@@ -120,7 +120,7 @@ public sealed class SettingsStore
                     var s = node.GetValue<string>();
                     if (d.Choices.Count > 0 && d.Choices.All(c => c.Value != s)) return false;
                     value = s; return true;
-                case SettingKind.Path: value = node.GetValue<string>(); return true;
+                case SettingKind.Path or SettingKind.Text: value = node.GetValue<string>(); return true;
                 case SettingKind.Folders:
                     if (node is not JsonArray a) return false;
                     value = a.Select(x => x?.GetValue<string>()).Where(x => !string.IsNullOrWhiteSpace(x)).Cast<string>()
@@ -171,6 +171,7 @@ public sealed class SettingsStore
             case SettingKind.Choice when value is string s && (d.Choices.Count == 0 || d.Choices.Any(c => c.Value == s)):
                 clean = s; break;
             case SettingKind.Path when value is string p: clean = p; break;
+            case SettingKind.Text when value is string text: clean = text.Trim(); break;
             case SettingKind.Folders when value is IEnumerable<string> list:
                 clean = list.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(); break;
             default: return false;
@@ -198,7 +199,7 @@ public sealed class SettingsStore
             case SettingKind.Toggle: Set(key, !Bool(key)); break;
             case SettingKind.Integer: Set(key, Int(key) + direction * (int)d.Step); break;
             case SettingKind.Number: Set(key, Math.Round(Double(key) + direction * d.Step, 6)); break;
-            case SettingKind.Choice:
+            case SettingKind.Choice when d.Choices.Count > 0:
                 var i = d.Choices.ToList().FindIndex(c => c.Value == String(key));
                 var next = ((i < 0 ? 0 : i) + direction + d.Choices.Count) % d.Choices.Count;
                 Set(key, d.Choices[next].Value);

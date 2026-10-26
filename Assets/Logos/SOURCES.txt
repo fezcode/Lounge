@@ -9,3 +9,9 @@ Public domain on Wikimedia Commons (a simple text logo), recoloured white. HBO M
 Netflix 2015 logo: https://commons.wikimedia.org/wiki/File:Netflix_2015_logo.svg
 Public domain on Wikimedia Commons (a simple text logo). Netflix is a trademark of Netflix, Inc.; the logo is used only to label the Netflix tile.
 
+
+Steam icon logo: https://commons.wikimedia.org/wiki/File:Steam_icon_logo.svg
+Public domain on Wikimedia Commons. Steam is a trademark of Valve Corporation; the logo is used only to label the Steam Big Picture tile.
+
+
+Cogas icon: Cogas's own app icon (github.com/fezcode/Cogas, Assets/icon-256.png), by the same author as Lounge.

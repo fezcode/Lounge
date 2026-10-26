@@ -12,8 +12,9 @@ namespace Lounge.Shell;
 public sealed class VolumeHud : Border
 {
     private readonly Border _fill;
+    private readonly Border _track;
     private readonly TextBlock _label = Ui.Text("", T.Body, T.Text, FontWeight.Bold);
-    private readonly Control _icon;
+    private Control _icon;
     private readonly Spring _show;
     private readonly Spring _level;
     private IDisposable? _hide;
@@ -27,24 +28,35 @@ public sealed class VolumeHud : Border
         Width = 96;
         Padding = new Thickness(0, 26);
         CornerRadius = new CornerRadius(48);
-        Background = T.SurfaceStrong;
-        BorderBrush = T.Line;
         BorderThickness = new Thickness(1);
         BoxShadow = new BoxShadows(new BoxShadow { OffsetY = 16, Blur = 50, Color = Color.FromArgb(140, 0, 0, 0) });
         IsHitTestVisible = false;
-        _fill = new Border { Background = T.Text, CornerRadius = new CornerRadius(12), VerticalAlignment = VerticalAlignment.Bottom };
-        var track = new Border
-        {
-            Width = 24, Height = TrackHeight, CornerRadius = new CornerRadius(12),
-            Background = T.WithAlpha(T.TextColor, 0.18), Child = _fill, ClipToBounds = true,
-        };
+        _fill = new Border { CornerRadius = new CornerRadius(12), VerticalAlignment = VerticalAlignment.Bottom };
+        _track = new Border { Width = 24, Height = TrackHeight, CornerRadius = new CornerRadius(12), Child = _fill, ClipToBounds = true };
         _icon = Icons.Make("audio", 34, T.Text);
-        Child = Ui.V(18, _label.Align(HorizontalAlignment.Center, VerticalAlignment.Top), track.Align(HorizontalAlignment.Center, VerticalAlignment.Top), _icon.Align(HorizontalAlignment.Center, VerticalAlignment.Top));
+        Child = Ui.V(18, _label.Align(HorizontalAlignment.Center, VerticalAlignment.Top), _track.Align(HorizontalAlignment.Center, VerticalAlignment.Top), _icon.Align(HorizontalAlignment.Center, VerticalAlignment.Top));
+        Restyle();
         var tr = new TranslateTransform();
         RenderTransform = tr;
         Opacity = 0;
         _show = new Spring(0, v => { Opacity = Math.Clamp(v, 0, 1); tr.X = 60 * (1 - v); }, 320, 26);
         _level = new Spring(0, v => _fill.Height = Math.Clamp(v, 0, 1) * TrackHeight, 400, 32);
+    }
+
+    /// <summary>Takes the theme's colours (the HUD outlives theme changes).</summary>
+    public void Restyle()
+    {
+        Background = T.SurfaceStrong;
+        BorderBrush = T.Line;
+        _fill.Background = T.Text;
+        _track.Background = T.WithAlpha(T.TextColor, 0.18);
+        _label.Foreground = T.Text;
+        if (Child is StackPanel v)
+        {
+            var at = v.Children.IndexOf(_icon);
+            _icon = Icons.Make("audio", 34, T.Text).Align(HorizontalAlignment.Center, VerticalAlignment.Top);
+            v.Children[at] = _icon;
+        }
     }
 
     public void Show(int level, bool muted)
@@ -92,6 +104,16 @@ public sealed class StatusBar : StackPanel
         if (L.Settings is null) return;
         _clock.IsVisible = L.Settings.Bool(K.ShowClock);
         _clock.Text = DateTime.Now.ToString(L.Settings.Bool(K.Clock24h) ? "HH:mm" : "h:mm tt");
+    }
+
+    /// <summary>Takes the theme's colours (the bar outlives theme changes).</summary>
+    public void Restyle()
+    {
+        _clock.Foreground = T.Text;
+        _npText.Foreground = T.Text;
+        _nowPlaying.Background = T.Surface;
+        if (_nowPlaying.Child is Panel old) old.Children.Clear();
+        _nowPlaying.Child = Ui.H(10, Icons.Make("music", 24, T.Accent), _npText);
     }
 
     public void SetNowPlaying(string? text)

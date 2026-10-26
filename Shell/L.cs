@@ -5,6 +5,7 @@ using Lounge.Core.Launch;
 using Lounge.Core.Library;
 using Lounge.Core.Media;
 using Lounge.Core.Settings;
+using Lounge.Core.Weather;
 using Lounge.Media;
 using Lounge.Platform;
 
@@ -26,6 +27,8 @@ public static class L
     public static PlayQueue Queue { get; } = new();
     public static SoundEngine Sound { get; set; } = null!;
     public static SystemVolume Volume { get; set; } = null!;
+    /// <summary>The home widgets' forecast; offline until start-up gives it a connection.</summary>
+    public static WeatherService Weather { get; set; } = new(null, null);
     public static DormantState Dormant { get; } = new();
     public static MainWindow Window { get; set; } = null!;
     public static bool Preview { get; set; }
@@ -34,6 +37,13 @@ public static class L
     public static MediaKind NowPlayingKind { get; set; }
 
     public static void Play(UiSound s) => Sound?.Play(s);
+
+    /// <summary>Brings the forecast up to date while the weather widget is on.</summary>
+    public static void RefreshWeather(bool force = false)
+    {
+        if (Settings is null || !Settings.Bool(K.ShowWeather)) return;
+        _ = Weather.RefreshAsync(Settings.String(K.WeatherPlace), WeatherService.FahrenheitFor(Settings.String(K.WeatherUnits)), force);
+    }
 
     public static PlayerOptions PlayerOptions() => new()
     {

@@ -77,12 +77,30 @@ public static class Ui
         return new Border
         {
             Background = strong ? T.SurfaceStrong : T.Surface,
-            BorderBrush = T.Line,
-            BorderThickness = new Thickness(1),
+            BorderBrush = Rim(),
+            BorderThickness = new Thickness(T.Def.LiquidGlass ? 1.5 : 1),
             CornerRadius = new CornerRadius(radius < 0 ? T.RadiusLarge : radius),
             Child = child,
         };
     }
+
+    /// <summary>A panel's edge: the theme's line, or under liquid glass a rim that catches the
+    /// light bright along the top-left, fades down the sides and glints again bottom-right.</summary>
+    public static IBrush Rim() => !T.Def.LiquidGlass ? T.Line : new LinearGradientBrush
+    {
+        StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+        EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
+        GradientStops =
+        {
+            new GradientStop(Color.FromArgb(150, 255, 255, 255), 0),
+            new GradientStop(Color.FromArgb(28, 255, 255, 255), 0.35),
+            new GradientStop(Color.FromArgb(18, 255, 255, 255), 0.7),
+            new GradientStop(Color.FromArgb(90, 255, 255, 255), 1),
+        },
+    };
+
+    /// <summary>The sheen across the top of a liquid glass panel (null for other themes).</summary>
+    public static IBrush? Sheen() => !T.Def.LiquidGlass ? null : VerticalFade(Colors.White, 0.13, 0, 0, 0.45);
 
     public static IBrush VerticalFade(Color c, double topAlpha, double bottomAlpha, double start = 0, double end = 1) =>
         new LinearGradientBrush
