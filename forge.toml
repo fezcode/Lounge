@@ -9,10 +9,10 @@ publisher = "Samil Bulbul"
 comments  = "Controller-first media center for Windows"
 
 [ui]
-# huh is the only shipped theme that asks the engine for a real Mica backdrop,
-# so the wizard picks up the desktop tint behind it instead of painting its own
-# ground. It lays the steps out as a rail down the left.
-theme        = "huh"
+# Glass uses native acrylic with full transparency and strong glass reflections.
+# Its transparent panes let the frosted content behind the window show through.
+# The wizard keeps a step rail down the left.
+theme        = "glass"
 window_title = "Lounge Setup"
 
 [install]
@@ -30,7 +30,7 @@ registry_values = [
     "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\Lounge",
 ]
 
-# Step titles double as the labels in huh's left rail, so they are short. The
+# Step titles double as the labels in the left rail, so they are short. The
 # rail already heads itself with the app name and version, and each body carries
 # the version where it matters; version.ps1 rewrites those on a bump. Do not put
 # a version number in a comment here - version.ps1 will not rewrite it and it
