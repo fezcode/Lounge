@@ -198,7 +198,9 @@ internal static class Program
         var until = DateTime.Now.AddSeconds(15);
         while (ImageCache.Busy && DateTime.Now < until) Pump(5);
         Pump(5);
-        var frame = _window.CaptureRenderedFrame();
+        // Freed straight away: left to the garbage collector, a couple of hundred full-screen
+        // frames piled up in native memory and Skia crashed encoding a later one.
+        using var frame = _window.CaptureRenderedFrame();
         if (frame is null) throw new InvalidOperationException("Nothing rendered for " + name);
         var file = Path.Combine(_out, name + ".png");
         frame.Save(file);

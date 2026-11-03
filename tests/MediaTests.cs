@@ -240,9 +240,16 @@ public class MediaTests
         WaitFrame(p)?.Dispose();
         p.SetSpeed(2.0);
         p.Play();
+        // The rate, not the start: opening audio can take a moment on a busy machine, and
+        // timed from Play that delay read as slow playback. Wait for the clock to run, then
+        // see how far it goes in a second.
         var sw = Stopwatch.StartNew();
-        while (sw.ElapsedMilliseconds < 1500) { p.TakeFrame()?.Dispose(); Thread.Sleep(5); }
-        Assert.InRange(p.Position, 2.4, 3.4);
+        while (sw.ElapsedMilliseconds < 5000 && p.Position < 0.2) { p.TakeFrame()?.Dispose(); Thread.Sleep(5); }
+        var from = p.Position;
+        sw.Restart();
+        while (sw.ElapsedMilliseconds < 1000) { p.TakeFrame()?.Dispose(); Thread.Sleep(5); }
+        var rate = (p.Position - from) / sw.Elapsed.TotalSeconds;
+        Assert.InRange(rate, 1.6, 2.4);
     }
 
     [Fact]

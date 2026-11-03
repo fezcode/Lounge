@@ -34,6 +34,10 @@ public enum HomeLayout
     /// chosen one's contents as a plain list beside them, and the focused thing shown on the
     /// right, its picture fading into the dark over a framed card.</summary>
     Hall,
+    /// <summary>Calm and spatial: the focused item's title light and centred over a soft blur,
+    /// frosted cards of the day's numbers floating around it, a row of tiles below, and the
+    /// destinations as pills in a frosted bar along the bottom.</summary>
+    Floating,
 }
 
 /// <summary>A procedural default backdrop, so themes need no shipped wallpapers. Projector:
@@ -43,8 +47,9 @@ public enum HomeLayout
 /// black with broad bands of colour sweeping across it. Mist: a pale morning grey with soft
 /// pastel light drifting through it. Liquid: near-black with warm and cool light pooling
 /// under glass, and a slow sheen sliding across it. Snowfall: a cold night over dark mountains,
-/// fog drifting and snow falling.</summary>
-public enum BackdropStyle { Aurora, Sunset, Fanart, Waves, Glow, Projector, Pixel, Drive, Mist, Liquid, Snowfall }
+/// fog drifting and snow falling. Haze: a soft out-of-focus wash of teal and warm peach, like
+/// a photograph seen through frosted glass.</summary>
+public enum BackdropStyle { Aurora, Sunset, Fanart, Waves, Glow, Projector, Pixel, Drive, Mist, Liquid, Snowfall, Haze }
 
 /// <summary>Everything a theme decides. Colours are #RRGGBB or #AARRGGBB strings so Core
 /// stays free of Avalonia; the Shell turns them into brushes.</summary>
@@ -264,7 +269,24 @@ public static class Themes
         AmbientPreset = "saga", SoundSet = "saga",
     };
 
-    public static readonly IReadOnlyList<ThemeDefinition> All = [Aurora, LivingRoom, Kodi, ConsoleOne, Series, ScreeningRoom, Arcade, CarPlay, Daylight, Liquid, Saga];
+    /// <summary>Calm and ambient: a soft teal-and-peach blur, white type in a light round
+    /// face, frosted cards floating with small drawings of the day's numbers, slow easy
+    /// motion and a warm, quiet sound.</summary>
+    public static readonly ThemeDefinition Ambient = new()
+    {
+        Id = "ambient", Name = "Ambient", Layout = HomeLayout.Floating, Backdrop = BackdropStyle.Haze,
+        Bg0 = "#5C7780", Bg1 = "#4B636C",
+        BackdropA = "#7FA3B0", BackdropB = "#E3BC9C", BackdropC = "#A3B4C4",
+        Surface = "#2EFFFFFF", SurfaceStrong = "#F2405660", Line = "#3DFFFFFF",
+        Text = "#FFFFFF", TextMuted = "#CCFFFFFF", TextFaint = "#8CFFFFFF",
+        Accent = "#2F6676", OnAccent = "#FFFFFF", Focus = "#FFFFFF",
+        Radius = 24, RadiusLarge = 32, FocusScale = 1.05, SpringStiffness = 240, SpringDamping = 24,
+        TitleWeight = 300,
+        BodyFont = "Outfit", DisplayFont = "Outfit",
+        AmbientPreset = "ambient", SoundSet = "ambient",
+    };
+
+    public static readonly IReadOnlyList<ThemeDefinition> All = [Aurora, LivingRoom, Kodi, ConsoleOne, Series, ScreeningRoom, Arcade, CarPlay, Daylight, Liquid, Saga, Ambient];
 
     public static ThemeDefinition Get(string id) => All.FirstOrDefault(t => t.Id == id) ?? Aurora;
 }

@@ -682,6 +682,9 @@ Check("On the Web screen, X opens a site's options", WebOptionsWithX);
         Press(PadButton.DPadDown);                 // third song
         Press(PadButton.A);
         Assert(Wait(() => L.Queue.Index == 2), $"A on a song in Up next did not play it (queue at {L.Queue.Index})");
+        // The question is only asked while music plays: on a busy machine the song can still
+        // be opening when B arrives, and then B rightly just leaves.
+        Assert(Wait(() => L.Player.IsPlaying), "the third song did not start playing");
 
         Press(PadButton.B);
         Pump(10);

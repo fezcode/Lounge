@@ -152,6 +152,7 @@ public static class SettingsSchema
         new("daylight", "Daylight"),
         new("liquid", "Liquid Glass"),
         new("saga", "Saga"),
+        new("ambient", "Ambient"),
     ];
 
     public static readonly IReadOnlyList<SettingChoice> Accents =

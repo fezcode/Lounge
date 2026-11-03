@@ -318,6 +318,7 @@ public sealed class Backdrop : Grid
 
         if (d.Backdrop == BackdropStyle.Liquid) Liquid(a, b, c);
         if (d.Backdrop == BackdropStyle.Snowfall) Snowfall(a, b, c);
+        if (d.Backdrop == BackdropStyle.Haze) Haze(a, b, c);
         var snowy = d.Backdrop == BackdropStyle.Snowfall;
 
         _scrim.Background = new LinearGradientBrush
@@ -371,6 +372,40 @@ public sealed class Backdrop : Grid
             }
             // Across and back every few minutes.
             move.X = -1000 + 1600 * (0.5 + 0.5 * Math.Sin(t * 0.02));
+        };
+    }
+
+    /// <summary>Haze: a photograph seen out of focus through frosted glass. Teal and blue-grey
+    /// at the edges, a warm peach glow off-centre like a lit face, a pale bloom of daylight,
+    /// all drifting very slowly, with a little grain so it reads as a picture, not a gradient.</summary>
+    private void Haze(Color a, Color b, Color c)
+    {
+        _scene.Children.Add(new Border
+        {
+            Background = new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative), EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
+                GradientStops = { new GradientStop(a, 0), new GradientStop(c, 0.55), new GradientStop(Color.FromRgb(120, 150, 160), 1) },
+            },
+        });
+        var blooms = new[]
+        {
+            (b, 0.46, 0.38, 0.42, 0.85),                        // the warm subject
+            (Color.FromRgb(245, 225, 205), 0.58, 0.3, 0.22, 0.55), // its highlight
+            (Color.FromRgb(240, 244, 246), 0.3, 0.55, 0.38, 0.35), // daylight from the left
+            (Color.FromRgb(96, 132, 146), 0.85, 0.75, 0.5, 0.55),  // cool shade, lower right
+        }.Select(x => Blob(x.Item1, x.Item2, x.Item3, x.Item4, x.Item5)).ToArray();
+        foreach (var bl in blooms) _scene.Children.Add(bl.Shape);
+        var grain = new ImageBrush(Grain()) { TileMode = TileMode.Tile, Stretch = Stretch.None, DestinationRect = new RelativeRect(0, 0, 256, 256, RelativeUnit.Absolute) };
+        _scene.Children.Add(new Border { Background = grain, Opacity = 0.35, IsHitTestVisible = false });
+        _animate = t =>
+        {
+            for (int i = 0; i < blooms.Length; i++)
+            {
+                var (_, brush, cx, cy) = blooms[i];
+                brush.Center = new RelativePoint(cx + 0.04 * Math.Sin(t * 0.05 + i * 1.9), cy + 0.03 * Math.Cos(t * 0.045 + i * 1.3), RelativeUnit.Relative);
+                brush.GradientOrigin = brush.Center;
+            }
         };
     }
 

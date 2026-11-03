@@ -145,6 +145,24 @@ public sealed class AmbientSynth
                 [(74, 2), (72, 1), (69, 1), (67, 2), (65, 2), (64, 2), (62, 6)],
             ],
         },
+        // Calm and human at 56 bpm in E-flat: warm major-seventh chords, a soft piano picking
+        // out a chord tone now and then, a low string held under each chord, and short
+        // unhurried tunes with room to breathe between them.
+        ["ambient"] = new("ambient", "Ambient",
+            [[39, 46, 50, 55, 58], [36, 43, 46, 51, 55], [44, 51, 55, 58, 63], [41, 48, 51, 56, 60]],
+            8 * 60 / 56.0, 0.1, 0.38, 6, 0.08, 0.09, 3.2, [70, 72, 74, 75, 77, 79, 82], 0.4, 0.6, 0.05)
+        {
+            Tempo = 56, Division = 4,
+            Arp = [0, -1, -1, -1, 2, -1, -1, -1, 4, -1, -1, -1, 3, -1, -1, -1], ArpOctave = 12, ArpLevel = 0.13, ArpTimbre = Timbre.Felt,
+            BassLevel = 0.14, BassBeats = 0, BassTimbre = Timbre.Pluck,
+            MelodyLevel = 0.28, MelodyTimbre = Timbre.Felt,
+            Phrases =
+            [
+                [(75, 1), (77, 1), (79, 2), (77, 2), (74, 2), (75, 4), (0, 4)],
+                [(79, 2), (82, 2), (79, 1), (77, 1), (75, 2), (77, 4), (0, 4)],
+                [(70, 1), (74, 1), (75, 2), (79, 3), (77, 1), (75, 4), (0, 4)],
+            ],
+        },
     };
 
     private readonly AmbientPreset _p;

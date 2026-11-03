@@ -42,6 +42,7 @@ public sealed class HomeScreen : Screen
         _blink?.Stop();
         _carTimer?.Stop();
         _barClock?.Stop();
+        _float?.Stop();
     }
 
     private bool _shownOnce;
@@ -81,6 +82,8 @@ public sealed class HomeScreen : Screen
         _carTimer = null;
         _barClock?.Stop();
         _barClock = null;
+        _float?.Stop();
+        _float = null;
         var (content, root) = T.Def.Layout switch
         {
             HomeLayout.BottomRibbon => LivingRoom(),
@@ -93,6 +96,7 @@ public sealed class HomeScreen : Screen
             HomeLayout.Glance => Glance(),
             HomeLayout.Sidebar => Sidebar(),
             HomeLayout.Hall => Hall(),
+            HomeLayout.Floating => Floating(),
             _ => Aurora(),
         };
         _building = false;
@@ -106,6 +110,7 @@ public sealed class HomeScreen : Screen
         ShowCarPage(Focused, snap: true);
         _carTimer?.Start();
         _barClock?.Start();
+        _float?.Start();
     }
 
     // ------------------------------------------------------------------ shared pieces
@@ -1573,6 +1578,213 @@ public sealed class HomeScreen : Screen
             meter.IsVisible = e.Progress >= 0;
             _sagaBar.Width = Math.Max(2, (meter.Width - 6) * Math.Clamp(e.Progress, 0, 1));
         }
+    }
+
+    // ------------------------------------------------------------------ Ambient (floating)
+
+    /// <summary>Ambient: the floating cards' slow bob, while Home is up.</summary>
+    private DispatcherTimer? _float;
+
+    /// <summary>Calm and spatial: a small mark at the top, the focused item's title light and
+    /// centred over the soft blur, frosted cards floating around it each with a small drawing
+    /// of one of the day's numbers (the sun's way across the sky, the week, how far into the
+    /// last video you got, the song or the music), a row of tiles below, and the destinations
+    /// as pills in a frosted bar along the bottom, the chosen one white.</summary>
+    private (Control, FocusNode) Floating()
+    {
+        const double W = 1920;
+        var grid = new Grid();
+        var root = new FocusList(horizontal: false);
+        var sections = HomeModel.Sections().ToDictionary(s => s.Id);
+        var white = Brushes.White;
+
+        // The mark: two rounded squares turned on their points, one inside the other.
+        var mark = new Viewbox
+        {
+            Width = 34, Height = 34, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 44, 0, 0),
+            Child = new Canvas
+            {
+                Width = 24, Height = 24,
+                Children =
+                {
+                    new Avalonia.Controls.Shapes.Path { Data = Geometry.Parse("M12 2.5l9.5 9.5-9.5 9.5L2.5 12z M12 8l4 4-4 4-4-4z"), Stroke = white, StrokeThickness = 1.8, StrokeJoin = PenLineJoin.Round },
+                },
+            },
+        };
+        grid.Children.Add(mark);
+
+        // The headline.
+        _heroTitle = Ui.Text("", 64, T.Text, FontWeight.Light, TextWrapping.Wrap);
+        _heroTitle.TextAlignment = TextAlignment.Center;
+        _heroTitle.MaxLines = 2;
+        _heroTitle.TextTrimming = TextTrimming.CharacterEllipsis;
+        _heroTitle.MaxWidth = 980;
+        _heroSubtitle = Ui.Text("", T.Body, T.TextMuted, FontWeight.Light);
+        _heroSubtitle.TextAlignment = TextAlignment.Center;
+        _heroSubtitle.TextTrimming = TextTrimming.CharacterEllipsis;
+        _heroSubtitle.MaxWidth = 900;
+        var headline = Ui.V(12, _heroTitle, _heroSubtitle);
+        headline.HorizontalAlignment = HorizontalAlignment.Center;
+        headline.VerticalAlignment = VerticalAlignment.Top;
+        headline.Margin = new Thickness(0, 390, 0, 0);
+        grid.Children.Add(headline);
+
+        // The floating cards, each placed by hand like objects in a room.
+        var floaters = new List<(Control Card, double Phase)>();
+        void Float(Control card, double x, double y, double phase)
+        {
+            card.HorizontalAlignment = HorizontalAlignment.Left;
+            card.VerticalAlignment = VerticalAlignment.Top;
+            card.Margin = new Thickness(x, y, 0, 0);
+            card.RenderTransform = new TranslateTransform();
+            grid.Children.Add(card);
+            floaters.Add((card, phase));
+        }
+        Border Card(string label, Control drawing, string value, double w = 300, double h = 184)
+        {
+            var title = Ui.Text(label, T.Caption, T.TextMuted, FontWeight.Light);
+            title.TextTrimming = TextTrimming.CharacterEllipsis;
+            var amount = Ui.Text(value, 30, T.Text, FontWeight.Light);
+            amount.TextTrimming = TextTrimming.CharacterEllipsis;
+            var layout = Ui.Grid("*", "Auto,*,Auto");
+            layout.Children.Add(title.Row(0));
+            layout.Children.Add(drawing.Align(HorizontalAlignment.Stretch, VerticalAlignment.Center).Row(1));
+            layout.Children.Add(amount.Row(2));
+            return new Border
+            {
+                Width = w, Height = h, CornerRadius = new CornerRadius(28), Padding = new Thickness(24, 18),
+                Background = T.WithAlpha(Colors.White, 0.16), BorderBrush = T.WithAlpha(Colors.White, 0.26), BorderThickness = new Thickness(1),
+                Child = layout, IsHitTestVisible = false,
+            };
+        }
+        Avalonia.Controls.Shapes.Path Line(string data, double thickness = 2, double alpha = 1) => new()
+        {
+            Data = Geometry.Parse(data), Stroke = T.WithAlpha(Colors.White, alpha), StrokeThickness = thickness,
+            StrokeLineCap = PenLineCap.Round, IsHitTestVisible = false,
+        };
+        static Avalonia.Controls.Shapes.Ellipse Dot(double size, double alpha) => new()
+        {
+            Width = size, Height = size, Fill = new SolidColorBrush(Color.FromArgb((byte)(alpha * 255), 255, 255, 255)),
+        };
+        string Inv(FormattableString f) => FormattableString.Invariant(f);
+
+        // The sun's way across today's sky, the sun where it is now, above a horizon.
+        if (Widgets.WeatherOn)
+        {
+            var sky = new Canvas { Width = 250, Height = 70 };
+            var day = Math.Clamp((DateTime.Now.TimeOfDay.TotalHours - 6) / 13, 0, 1);
+            sky.Children.Add(Line("M20 62 A105 52 0 0 1 230 62", 1.2, 0.35));
+            sky.Children.Add(Line("M0 62 H250", 2.5));
+            var sun = Dot(14, 1);
+            Canvas.SetLeft(sun, 125 - 105 * Math.Cos(Math.PI * day) - 7);
+            Canvas.SetTop(sun, 62 - 52 * Math.Sin(Math.PI * day) - 7);
+            sky.Children.Add(sun);
+            var r = L.Weather.Current;
+            var weather = Card(r is null ? "Weather" : r.Place, sky,
+                r is null ? (L.Weather.Problem ?? "Getting the weather...") : $"{Math.Round(r.Temp)}°  {r.Condition}");
+            Float(weather, 210, 170, 0);
+        }
+        // The week as dots, today large.
+        if (Widgets.CalendarOn)
+        {
+            var now = DateTime.Now;
+            var culture = System.Globalization.CultureInfo.CurrentCulture;
+            var first = culture.DateTimeFormat.FirstDayOfWeek;
+            var todayAt = ((int)now.DayOfWeek - (int)first + 7) % 7;
+            var week = new Canvas { Width = 250, Height = 40 };
+            week.Children.Add(Line("M10 20 H240", 1.2, 0.35));
+            for (int i = 0; i < 7; i++)
+            {
+                var size = i == todayAt ? 26 : 9;
+                var dot = Dot(size, i == todayAt ? 1 : i < todayAt ? 0.85 : 0.45);
+                Canvas.SetLeft(dot, 10 + i * 230 / 6.0 - size / 2);
+                Canvas.SetTop(dot, 20 - size / 2);
+                week.Children.Add(dot);
+            }
+            Float(Card(now.ToString("dddd", culture), week, now.ToString("d MMMM", culture)), W - 210 - 300, 150, 1.7);
+        }
+        // How far into the last video, on a fine track with a knob.
+        if (sections.GetValueOrDefault("jump")?.Entries.FirstOrDefault() is { } last)
+        {
+            var track = new Canvas { Width = 250, Height = 30 };
+            var p = Math.Clamp(last.Progress, 0, 1);
+            track.Children.Add(Line("M8 15 H242", 2, 0.3));
+            track.Children.Add(Line(Inv($"M8 15 H{8 + 234 * p:0.#}"), 2.5));
+            var knob = Dot(20, 1);
+            Canvas.SetLeft(knob, 8 + 234 * p - 10);
+            Canvas.SetTop(knob, 5);
+            track.Children.Add(knob);
+            Float(Card(last.Title, track, last.Subtitle ?? "Resume"), 120, 540, 3.1);
+        }
+        // The song, as an arc filling up; or the music on the shelf.
+        {
+            var playing = CarPlay.MusicOn;
+            var share = playing && L.Player.Duration > 0 ? Math.Clamp(L.Player.Position / L.Player.Duration, 0, 1) : 1;
+            var arc = new Canvas { Width = 250, Height = 70 };
+            arc.Children.Add(Line("M175 4 A40 31 0 1 1 175 66", 1.2, 0.3));
+            var end = Math.PI * (0.5 - share);
+            arc.Children.Add(Line(Inv($"M175 4 A40 31 0 {(share > 0.5 ? 1 : 0)} 1 {175 + 40 * Math.Cos(end):0.##} {35 - 31 * Math.Sin(end):0.##}"), 3));
+            var albums = L.Library.Albums().Count;
+            var label = playing ? "Now playing" : "Music";
+            var value = playing ? Playback.NowPlayingLine() ?? "Playing" : albums == 1 ? "1 album" : $"{albums} albums";
+            Float(Card(label, arc, value), W - 150 - 300, 500, 4.4);
+        }
+
+        // The row of tiles, floating above the bar.
+        var source = new[] { "jump", "videos", "music", "apps" }
+            .Select(sections.GetValueOrDefault)
+            .FirstOrDefault(s => s is not null && s.Entries.Any(e => e.Tile is not null || e.Video is not null || e.Art is not null || e.Progress >= 0))
+            ?? sections.Values.FirstOrDefault();
+        var rowFocus = root.Add(new FocusList(horizontal: true));
+        var tiles = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 22, Margin = new Thickness(96, 16, 96, 24), HorizontalAlignment = HorizontalAlignment.Center };
+        foreach (var e in (source?.Entries ?? HomeModel.Destinations()).Take(12))
+        {
+            var card = EntryCard(e, 256, 144, caption: false, inside: true, radius: 24);
+            tiles.Children.Add(card);
+            rowFocus.Add(card.Item);
+        }
+        grid.Children.Add(new ScrollViewer
+        {
+            Content = tiles, ClipToBounds = false, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 730, 0, 0),
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        });
+
+        // The bar: the name, then a pill for each destination.
+        var barFocus = root.Add(new FocusList(horizontal: true, rememberIndex: true));
+        var pills = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+        pills.Children.Add(Ui.Text("Lounge", T.Body, T.Text, FontWeight.Regular).Align(HorizontalAlignment.Left, VerticalAlignment.Center).Margin(26, 0, 30, 0));
+        foreach (var d in HomeModel.Menu())
+        {
+            var label = Ui.Text(d.Title, T.Caption, T.Text, FontWeight.Regular);
+            var card = new Card(label.Margin(26, 14), 30) { FocusScale = 1.04, ShowRing = false, ShowGlow = false };
+            card.Body.Background = Brushes.Transparent;
+            card.Focused += f => { card.Body.Background = f ? Brushes.White : Brushes.Transparent; label.Foreground = f ? new SolidColorBrush(Color.FromRgb(30, 42, 48)) : T.Text; };
+            card.Item.Activate = d.Open;
+            _entries[card.Item] = d;
+            pills.Children.Add(card);
+            barFocus.Add(card.Item);
+        }
+        grid.Children.Add(new Border
+        {
+            HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 0, 46),
+            CornerRadius = new CornerRadius(40), Padding = new Thickness(8),
+            Background = T.WithAlpha(Colors.White, 0.16), BorderBrush = T.WithAlpha(Colors.White, 0.26), BorderThickness = new Thickness(1),
+            Child = pills,
+        });
+
+        // Everything floats: each card bobs gently on its own slow beat.
+        if (Motion.Enabled)
+        {
+            var start = DateTime.Now;
+            _float = new DispatcherTimer(TimeSpan.FromMilliseconds(40), DispatcherPriority.Background, (_, _) =>
+            {
+                var t = (DateTime.Now - start).TotalSeconds;
+                foreach (var (card, phase) in floaters)
+                    if (card.RenderTransform is TranslateTransform move) move.Y = 6 * Math.Sin(t * 0.5 + phase);
+            });
+            _float.Stop();
+        }
+        return (grid, root);
     }
 
     // ------------------------------------------------------------------ input

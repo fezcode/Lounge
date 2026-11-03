@@ -23,6 +23,7 @@ public static class UiSounds
         ["daylight"] = new(1.2, 0.35, 0.7),   // a soft, rounded tap
         ["liquid"] = new(1.35, 0.45, 1.0),   // a glassy ping with a little ring
         ["saga"] = new(0.7, 0.22, 1.1),   // a deep knock on wood
+        ["ambient"] = new(1.1, 0.28, 0.9),   // a soft, breathy touch
         ["carplay"] = new(1.5, 0.12, 0.55),   // a dashboard's tick: high, clean and quick
     };
 
