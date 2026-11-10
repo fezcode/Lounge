@@ -38,6 +38,11 @@ public enum HomeLayout
     /// frosted cards of the day's numbers floating around it, a row of tiles below, and the
     /// destinations as pills in a frosted bar along the bottom.</summary>
     Floating,
+    /// <summary>A green-screen terminal: the destinations as bracketed tabs along a rule at the
+    /// top, the chosen one's contents as a list with the selected line lit solid, the focused
+    /// thing's picture redrawn in phosphor green on the right with a block meter under it, and
+    /// a status line of the day's numbers along the bottom.</summary>
+    Terminal,
 }
 
 /// <summary>A procedural default backdrop, so themes need no shipped wallpapers. Projector:
@@ -48,8 +53,9 @@ public enum HomeLayout
 /// pastel light drifting through it. Liquid: near-black with warm and cool light pooling
 /// under glass, and a slow sheen sliding across it. Snowfall: a cold night over dark mountains,
 /// fog drifting and snow falling. Haze: a soft out-of-focus wash of teal and warm peach, like
-/// a photograph seen through frosted glass.</summary>
-public enum BackdropStyle { Aurora, Sunset, Fanart, Waves, Glow, Projector, Pixel, Drive, Mist, Liquid, Snowfall, Haze }
+/// a photograph seen through frosted glass. Crt: a dark green screen with scanlines, a bright
+/// band rolling slowly down it and the corners darkened by the curve of the glass.</summary>
+public enum BackdropStyle { Aurora, Sunset, Fanart, Waves, Glow, Projector, Pixel, Drive, Mist, Liquid, Snowfall, Haze, Crt }
 
 /// <summary>Everything a theme decides. Colours are #RRGGBB or #AARRGGBB strings so Core
 /// stays free of Avalonia; the Shell turns them into brushes.</summary>
@@ -286,7 +292,25 @@ public static class Themes
         AmbientPreset = "ambient", SoundSet = "ambient",
     };
 
-    public static readonly IReadOnlyList<ThemeDefinition> All = [Aurora, LivingRoom, Kodi, ConsoleOne, Series, ScreeningRoom, Arcade, CarPlay, Daylight, Liquid, Saga, Ambient];
+    /// <summary>A wrist computer's green screen: phosphor-green monospace type on near-black,
+    /// scanlines, square corners, no lift on focus (the chosen line lights up solid), pictures
+    /// redrawn in green, blippy sounds and a lonely late-night tune.</summary>
+    public static readonly ThemeDefinition Phosphor = new()
+    {
+        Id = "phosphor", Name = "Phosphor", Layout = HomeLayout.Terminal, Backdrop = BackdropStyle.Crt,
+        Bg0 = "#010A04", Bg1 = "#000502",
+        BackdropA = "#0A3318", BackdropB = "#3DFF84", BackdropC = "#021208",
+        Surface = "#26062A12", SurfaceStrong = "#F5020F06", Line = "#663DFF84",
+        Text = "#3DFF84", TextMuted = "#B33DFF84", TextFaint = "#663DFF84",
+        Accent = "#3DFF84", OnAccent = "#021006", Focus = "#3DFF84",
+        Danger = "#FFB641", Success = "#3DFF84",
+        Radius = 0, RadiusLarge = 0, FocusScale = 1.0, SpringStiffness = 520, SpringDamping = 40,
+        UppercaseHeaders = true, HeaderLetterSpacing = 2, TitleWeight = 400,
+        BodyFont = "Share Tech Mono", DisplayFont = "Share Tech Mono", ArtTone = "#0E4A24",
+        AmbientPreset = "phosphor", SoundSet = "phosphor",
+    };
+
+    public static readonly IReadOnlyList<ThemeDefinition> All = [Aurora, LivingRoom, Kodi, ConsoleOne, Series, ScreeningRoom, Arcade, CarPlay, Daylight, Liquid, Saga, Ambient, Phosphor];
 
     public static ThemeDefinition Get(string id) => All.FirstOrDefault(t => t.Id == id) ?? Aurora;
 }

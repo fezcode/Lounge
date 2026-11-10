@@ -867,7 +867,8 @@ Check("On the Web screen, X opens a site's options", WebOptionsWithX);
     private static void HomeWidgets()
     {
         var month = DateTime.Now.ToString("MMMM", System.Globalization.CultureInfo.CurrentCulture);
-        bool Shows(string text) => _w.Top!.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text is { } s && s.Contains(text) && t.IsEffectivelyVisible);
+        // Any case: some themes set their type in capitals.
+        bool Shows(string text) => _w.Top!.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text is { } s && s.Contains(text, StringComparison.CurrentCultureIgnoreCase) && t.IsEffectivelyVisible);
         try
         {
             foreach (var theme in Core.Themes.Themes.All)
@@ -883,7 +884,7 @@ Check("On the Web screen, X opens a site's options", WebOptionsWithX);
                 Assert(Shows(month), $"{theme.Id}: no calendar on Home");
                 CarPlay.Dashboard = false;
             }
-            // Daylight is up: switching both off in Settings takes them off Home.
+            // The last theme is up: switching both off in Settings takes them off Home.
             L.Settings.Set(K.ShowWeather, false);
             L.Settings.Set(K.ShowCalendar, false);
             Pump(20);

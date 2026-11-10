@@ -145,6 +145,25 @@ public sealed class AmbientSynth
                 [(74, 2), (72, 1), (69, 1), (67, 2), (65, 2), (64, 2), (62, 6)],
             ],
         },
+        // A late-night radio at 70 bpm in C minor: sixth and seventh chords, a walking string
+        // bass on the beat, brushes ticking softly, and a muted horn singing a lonely tune
+        // with a bluesy turn, then leaving room.
+        ["phosphor"] = new("phosphor", "Phosphor",
+            [[36, 48, 51, 55, 57], [44, 48, 51, 55, 60], [41, 48, 51, 53, 56], [43, 47, 50, 53, 55]],
+            8 * 60 / 70.0, 0.09, 0.3, 7, 0.06, 0.08, 2.6, [67, 68, 70, 71, 72, 74, 75, 77, 79], 0.4, 0.5)
+        {
+            Tempo = 70, Division = 2,
+            Drums = "x.x.x.x.x.x.x.x.", DrumLevel = 0.1,
+            Arp = [-1, -1, 2, -1, -1, -1, 3, -1, -1, -1, 2, -1, -1, -1, 4, -1], ArpOctave = 12, ArpLevel = 0.1, ArpTimbre = Timbre.Felt,
+            BassLevel = 0.26, BassBeats = 1, BassTimbre = Timbre.Pluck,
+            MelodyLevel = 0.3, MelodyTimbre = Timbre.Horn,
+            Phrases =
+            [
+                [(67, 1), (72, 1), (75, 2), (74, 1), (72, 1), (70, 2), (72, 4), (0, 4)],
+                [(75, 1), (77, 1), (79, 2), (77, 1), (75, 1), (74, 2), (71, 4), (0, 4)],
+                [(79, 2), (78, 1), (77, 1), (75, 2), (72, 2), (68, 1), (67, 3), (0, 4)],
+            ],
+        },
         // Calm and human at 56 bpm in E-flat: warm major-seventh chords, a soft piano picking
         // out a chord tone now and then, a low string held under each chord, and short
         // unhurried tunes with room to breathe between them.

@@ -16,8 +16,16 @@ public sealed class WebPad
     private bool _moveInFlight, _moveDirty;
     private string? _stickDir;
     private long _stickNext;
+    private long _stickAt = -10_000;
+    private bool _navBusy;
+
+    /// <summary>The D-pad ring is on something (the pointer sits on its centre).</summary>
+    public bool NavActive { get; private set; }
 
     public bool PointerMode { get; private set; }
+
+    /// <summary>The page size the pointer is kept inside, in CSS pixels.</summary>
+    public string Measured => FormattableString.Invariant($"{_vw}x{_vh}");
 
     public WebPad(CoreWebView2 web, bool pointer)
     {
@@ -65,7 +73,7 @@ public sealed class WebPad
             if (ptr.parentNode !== host) { host.appendChild(ptr); host.appendChild(hint); }
             return true;
           };
-          L.mode = (pointer, x, y) => { show = pointer; if (!ensure()) return; ptr.style.display = pointer ? 'block' : 'none'; ptr.style.left = x + 'px'; ptr.style.top = y + 'px'; };
+          L.mode = (pointer, x, y) => { show = pointer; if (!ensure()) return; ptr.style.display = pointer && !ringOn ? 'block' : 'none'; if (!pointer) navHide(); ptr.style.left = x + 'px'; ptr.style.top = y + 'px'; };
           L.press = down => { if (ensure()) ptr.style.transform = down ? 'scale(.72)' : ''; };
           L.hint = (text, ms) => { if (!ensure()) return; hint.textContent = text; hint.style.opacity = 1; clearTimeout(timer); timer = setTimeout(() => hint.style.opacity = 0, ms || 5000); };
           L.size = () => innerWidth + ',' + innerHeight;
@@ -103,6 +111,167 @@ public sealed class WebPad
             const password = el.type === 'password';
             return JSON.stringify({ label: el.getAttribute('aria-label') || el.placeholder || el.name || '', value: password ? '' : (el.value || ''), password });
           };
+          // ---- D-pad navigation: a ring moves between the things a mouse could click, and
+          // the pointer follows it (so hover menus open). Sites that aren't built for a remote
+          // get the same control a TV app has.
+          const SEL = 'a[href],button,input:not([type=hidden]),select,textarea,summary,[role=button],[role=link],[role=tab],[role=menuitem],' +
+            '[role=option],[role=checkbox],[role=switch],[role=radio],[role=slider],[tabindex]:not([tabindex="-1"]),[onclick]';
+          let ring, cur = null, ringOn = false, looping = false;
+          const ringEl = () => {
+            if (!ring) {
+              ring = document.createElement('div');
+              ring.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;border-radius:12px;box-sizing:border-box;border:4px solid #fff;' +
+                'box-shadow:0 0 0 3px rgba(0,0,0,.55),0 0 26px rgba(255,255,255,.45);z-index:2147483647;pointer-events:none;display:none;' +
+                'transition:left .12s,top .12s,width .12s,height .12s';
+            }
+            const host = document.body || document.documentElement;
+            if (host && ring.parentNode !== host) host.appendChild(ring);
+            return ring;
+          };
+          const navHide = () => { ringOn = false; cur = null; if (ring) ring.style.display = 'none'; if (ptr && show) ptr.style.display = 'block'; };
+          const track = () => {
+            if (!cur || !cur.isConnected) { navHide(); return; }
+            const r = cur.getBoundingClientRect(), g = ringEl();
+            g.style.left = (r.left - 6) + 'px'; g.style.top = (r.top - 6) + 'px';
+            g.style.width = (r.width + 12) + 'px'; g.style.height = (r.height + 12) + 'px';
+          };
+          const loop = () => { if (!ringOn) { looping = false; return; } track(); requestAnimationFrame(loop); };
+          const navShow = () => {
+            ringOn = true;
+            ringEl().style.display = 'block';
+            if (ptr) ptr.style.display = 'none';
+            track();
+            if (!looping) { looping = true; requestAnimationFrame(loop); }
+          };
+          const onScreen = r => r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth;
+          const usable = el => {
+            const r = el.getBoundingClientRect();
+            if (r.width < 6 || r.height < 6 || r.right + scrollX < 0 || r.bottom + scrollY < 0) return null;
+            if (el.disabled || el === ring || el === ptr || el === hint || el.closest('[inert]')) return null;
+            const s = getComputedStyle(el);
+            if (s.visibility === 'hidden' || parseFloat(s.opacity) < 0.05) return null;
+            if (onScreen(r)) {
+              // Something else on top (a dialog over the page): not reachable.
+              const hit = document.elementFromPoint(Math.min(Math.max(r.left + r.width / 2, 1), innerWidth - 2), Math.min(Math.max(r.top + r.height / 2, 1), innerHeight - 2));
+              if (hit && !el.contains(hit) && !hit.contains(el)) return null;
+            }
+            return r;
+          };
+          const candidates = () => {
+            const out = [];
+            for (const el of document.querySelectorAll(SEL)) {
+              const r = usable(el);
+              if (!r) continue;
+              // A button inside a link the same size is one thing to land on, not two.
+              const up = el.parentElement && el.parentElement.closest(SEL);
+              if (up) {
+                const u = up.getBoundingClientRect();
+                if (Math.abs(u.left - r.left) < 10 && Math.abs(u.top - r.top) < 10 && Math.abs(u.width - r.width) < 20 && Math.abs(u.height - r.height) < 20) continue;
+              }
+              out.push({ el, r });
+            }
+            return out;
+          };
+          const pick = (dir, from, list) => {
+            const cx = r => r.left + (r.right - r.left) / 2, cy = r => r.top + (r.bottom - r.top) / 2;
+            let best = null, bestScore = Infinity;
+            for (const c of list) {
+              const r = c.r;
+              let primary, overlap, off;
+              if (dir === 'right' || dir === 'left') {
+                if (dir === 'right' ? (cx(r) <= cx(from) + 2 || r.left < from.left + 4) : (cx(r) >= cx(from) - 2 || r.right > from.right - 4)) continue;
+                primary = Math.max(0, dir === 'right' ? r.left - from.right : from.left - r.right);
+                overlap = Math.min(r.bottom, from.bottom) - Math.max(r.top, from.top);
+                off = Math.abs(cy(r) - cy(from));
+                // Sideways stays near the row: never a leap to a menu at the other end of the page.
+                const gap = Math.max(r.top - from.bottom, from.top - r.bottom);
+                if (overlap <= 0 && (gap > innerHeight * 0.25 || gap > Math.max(from.bottom - from.top, r.bottom - r.top))) continue;
+              } else {
+                if (dir === 'down' ? (cy(r) <= cy(from) + 2 || r.top < from.top + 4) : (cy(r) >= cy(from) - 2 || r.bottom > from.bottom - 4)) continue;
+                primary = Math.max(0, dir === 'down' ? r.top - from.bottom : from.top - r.bottom);
+                overlap = Math.min(r.right, from.right) - Math.max(r.left, from.left);
+                off = Math.abs(cx(r) - cx(from));
+              }
+              const score = primary + (overlap > 0 ? 0 : off * 2) + off * 0.15;
+              if (score < bestScore) { bestScore = score; best = c; }
+            }
+            return best;
+          };
+          const centre = el => {
+            const r = el.getBoundingClientRect();
+            return { x: Math.round(Math.min(Math.max(r.left + r.width / 2, 0), innerWidth - 1)), y: Math.round(Math.min(Math.max(r.top + r.height / 2, 0), innerHeight - 1)) };
+          };
+          const focusOn = el => {
+            cur = el;
+            const r = el.getBoundingClientRect();
+            if (r.top < 0 || r.bottom > innerHeight) el.scrollIntoView({ block: r.height > innerHeight * 0.8 ? 'start' : 'center', inline: 'nearest', behavior: 'instant' });
+            else if (r.left < 0 || r.right > innerWidth) el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+            navShow();
+            return Object.assign({ k: 'move' }, centre(el));
+          };
+          // The video that fills the page, if one does.
+          const bigVideo = () => {
+            for (const v of document.querySelectorAll('video')) {
+              const r = v.getBoundingClientRect();
+              if (v.readyState > 0 && r.width * r.height > innerWidth * innerHeight * (document.fullscreenElement ? 0.2 : 0.5)) return v;
+            }
+            return null;
+          };
+          const playerState = () => document.fullscreenElement ? 'fs' : bigVideo() ? 'player' : '';
+          // Play or pause the video itself, for players that ignore the Space key.
+          L.toggle = paused => { const v = bigVideo(); if (!v || v.paused !== paused) return 'ok'; if (v.paused) v.play().catch(() => {}); else v.pause(); return 'toggled'; };
+          L.paused = () => { const v = bigVideo(); return v ? String(v.paused) : ''; };
+          L.player = playerState;
+          L.navHide = navHide;
+          L.navCentre = () => cur && cur.isConnected && ringOn ? JSON.stringify(centre(cur)) : '';
+          // One D-pad press. In a video, left and right are the player's own seek keys until
+          // the ring is on its controls (up or down brings it there).
+          L.dpad = (dir, px, py) => {
+            const player = playerState() !== '';
+            const active = ringOn && cur && cur.isConnected;
+            if (player && !active && (dir === 'left' || dir === 'right')) return JSON.stringify({ k: 'key' });
+            const list = candidates();
+            const others = list.filter(c => !cur || (c.el !== cur && !c.el.contains(cur) && !cur.contains(c.el)));
+            let from = active ? cur.getBoundingClientRect() : null;
+            if (!from) {
+              if (!player) {
+                // The first press lands on whatever is nearest the pointer.
+                let best = null, d = Infinity;
+                for (const c of list) {
+                  if (!onScreen(c.r)) continue;
+                  const dx = c.r.left + c.r.width / 2 - px, dy = c.r.top + c.r.height / 2 - py, e = dx * dx + dy * dy;
+                  if (e < d) { d = e; best = c; }
+                }
+                return JSON.stringify(best ? focusOn(best.el) : { k: 'key' });
+              }
+              // Up or down in a video: onto the player's own controls, the ones over the picture.
+              const v = bigVideo(), vr = v ? v.getBoundingClientRect() : { left: 0, top: 0, right: innerWidth, bottom: innerHeight };
+              const over = others.filter(c => c.r.left >= vr.left - 10 && c.r.right <= vr.right + 10 && c.r.top >= vr.top - 10 && c.r.bottom <= vr.bottom + 10);
+              const mx = (vr.left + vr.right) / 2, my = (vr.top + vr.bottom) / 2;
+              const first = pick(dir, { left: mx, right: mx, top: my, bottom: my }, over);
+              return JSON.stringify(first ? focusOn(first.el) : { k: 'key' });
+            }
+            const prev = cur;
+            let next = pick(dir, from, others);
+            if (next) {
+              const res = focusOn(next.el);
+              if (onScreen(next.el.getBoundingClientRect())) return JSON.stringify(res);
+              // A carousel that slides by transform doesn't scroll: the nearest one on screen instead.
+              next = pick(dir, from, others.filter(c => onScreen(c.r)));
+              if (next) return JSON.stringify(focusOn(next.el));
+              if (active) focusOn(prev); else navHide();
+            }
+            if (dir === 'up' || dir === 'down') {
+              scrollBy({ top: (dir === 'down' ? 1 : -1) * innerHeight * 0.4, behavior: 'instant' });
+              if (cur && ringOn && onScreen(cur.getBoundingClientRect())) return JSON.stringify(Object.assign({ k: 'scroll' }, centre(cur)));
+              navHide();
+              return JSON.stringify({ k: 'scroll' });
+            }
+            return JSON.stringify(active ? Object.assign({ k: 'stay' }, centre(cur)) : { k: 'key' });
+          };
+          // The page's size, whenever it changes (the window can still be restoring when a
+          // page finishes loading, and zoom changes it too).
+          if (window === window.top) addEventListener('resize', () => post({ kind: 'size', w: innerWidth, h: innerHeight }));
           addEventListener('mousemove', e => { if (show && ensure()) { ptr.style.left = e.clientX + 'px'; ptr.style.top = e.clientY + 'px'; } }, true);
           const editable = el => el && (el.isContentEditable || el.tagName === 'TEXTAREA' ||
             (el.tagName === 'INPUT' && !/^(button|submit|checkbox|radio|range|color|file|image|reset|hidden)$/i.test(el.type)));
@@ -136,6 +305,7 @@ public sealed class WebPad
                 _vw = w;
                 _vh = h;
             }
+            NavActive = false;
             if (_x < 0) { _x = _vw / 2; _y = _vh / 2; }
             _x = Math.Clamp(_x, 0, _vw - 1);
             _y = Math.Clamp(_y, 0, _vh - 1);
@@ -145,7 +315,8 @@ public sealed class WebPad
     }
 
     public string HelpText => PointerMode
-        ? "Left stick: pointer  ·  A: click  ·  Right stick: scroll  ·  Y: keyboard  ·  X: arrow keys  ·  B: back  ·  View: options  ·  Hold B: leave"
+        ? "D-pad: move  ·  A: select  ·  Left stick: pointer  ·  Right stick: scroll  ·  LT/RT: back/forward  ·  Y: keyboard  ·  X: arrow keys  ·  B: back  ·  View: options  ·  Hold B: leave\n" +
+          "In a video: A play/pause  ·  ◀ ▶ or LT/RT seek  ·  ▲ ▼ player controls  ·  B leaves full screen"
         : "D-pad: move  ·  A: select  ·  B: back  ·  Y: keyboard  ·  X: pointer  ·  View: options  ·  Hold B: leave";
 
     public async Task Volume(int percent, bool muted)
@@ -179,7 +350,7 @@ public sealed class WebPad
     {
         ["ArrowUp"] = ("ArrowUp", 38, null), ["ArrowDown"] = ("ArrowDown", 40, null),
         ["ArrowLeft"] = ("ArrowLeft", 37, null), ["ArrowRight"] = ("ArrowRight", 39, null),
-        ["Enter"] = ("Enter", 13, "\r"), ["Escape"] = ("Escape", 27, null), ["Backspace"] = ("Backspace", 8, null),
+        ["Enter"] = ("Enter", 13, "\r"), [" "] = ("Space", 32, " "), ["Escape"] = ("Escape", 27, null), ["Backspace"] = ("Backspace", 8, null),
     };
 
     /// <summary>How long a key or click is held. YouTube TV ignores Enter on some buttons
@@ -202,8 +373,25 @@ public sealed class WebPad
 
     // ------------------------------------------------------------------ pointer
 
+    /// <summary>The page changed size (the window finished restoring, or the zoom changed).</summary>
+    public void Resized(double w, double h)
+    {
+        if (w <= 0 || h <= 0) return;
+        if (_vw > 0 && _vh > 0) { _x = _x / _vw * w; _y = _y / _vh * h; }
+        _vw = w;
+        _vh = h;
+        _x = Math.Clamp(_x, 0, _vw - 1);
+        _y = Math.Clamp(_y, 0, _vh - 1);
+    }
+
     public void MovePointer(double dx, double dy)
     {
+        _stickAt = Environment.TickCount64;
+        if (NavActive)
+        {
+            NavActive = false;
+            _ = _web.ExecuteScriptAsync("window.__lounge && window.__lounge.navHide && window.__lounge.navHide()");
+        }
         _x = Math.Clamp(_x + dx, 0, _vw - 1);
         _y = Math.Clamp(_y + dy, 0, _vh - 1);
         if (_moveInFlight) { _moveDirty = true; return; }
@@ -219,6 +407,106 @@ public sealed class WebPad
             await Send("Input.dispatchMouseEvent", new { type = "mouseMoved", x = _x, y = _y });
         } while (_moveDirty);
         _moveInFlight = false;
+    }
+
+    /// <summary>Whether a video fills the page: "fs" (full screen), "player", or "".</summary>
+    public async Task<string> Player()
+    {
+        try { return JsonSerializer.Deserialize<string>(await _web.ExecuteScriptAsync("window.__lounge && window.__lounge.player ? window.__lounge.player() : ''")) ?? ""; }
+        catch (Exception) { return ""; }
+    }
+
+    /// <summary>A D-pad press on a site that isn't built for a remote: the ring moves to the
+    /// nearest thing in that direction and the pointer follows (hover menus open). In a
+    /// video, left and right seek until the ring is on the player's controls.</summary>
+    public async Task DPad(string dir)
+    {
+        if (_navBusy) return;
+        _navBusy = true;
+        try
+        {
+            if (!NavActive)
+            {
+                // A small mouse move first: players show their controls, menus wake up.
+                await Send("Input.dispatchMouseEvent", new { type = "mouseMoved", x = Math.Max(0, _x - 1), y = _y });
+                await Send("Input.dispatchMouseEvent", new { type = "mouseMoved", x = _x, y = _y });
+                // Players fade their controls in.
+                await Task.Delay(dir is "up" or "down" && await Player() != "" ? 400 : 120);
+            }
+            var raw = await _web.ExecuteScriptAsync(FormattableString.Invariant($"window.__lounge && window.__lounge.dpad ? window.__lounge.dpad('{dir}', {_x:0.#}, {_y:0.#}) : ''"));
+            var json = JsonSerializer.Deserialize<string>(raw);
+            if (string.IsNullOrEmpty(json)) { await Key(ArrowFor(dir)); return; }
+            using var doc = JsonDocument.Parse(json);
+            var r = doc.RootElement;
+            var kind = r.GetProperty("k").GetString();
+            if (kind == "key") { NavActive = false; await Key(ArrowFor(dir)); return; }
+            if (r.TryGetProperty("x", out var x) && r.TryGetProperty("y", out var y))
+            {
+                _x = Math.Clamp(x.GetDouble(), 0, _vw - 1);
+                _y = Math.Clamp(y.GetDouble(), 0, _vh - 1);
+                NavActive = true;
+                if (kind == "move") await Send("Input.dispatchMouseEvent", new { type = "mouseMoved", x = _x, y = _y });
+            }
+            else NavActive = false;
+        }
+        catch (Exception e) when (e is JsonException or InvalidOperationException or KeyNotFoundException or System.Runtime.InteropServices.COMException) { }
+        finally { _navBusy = false; }
+    }
+
+    private async Task<string> Eval(string script)
+    {
+        try { return JsonSerializer.Deserialize<string>(await _web.ExecuteScriptAsync(script)) ?? ""; }
+        catch (Exception e) when (e is JsonException or InvalidOperationException or System.Runtime.InteropServices.COMException) { return ""; }
+    }
+
+    private static string ArrowFor(string dir) => dir switch { "up" => "ArrowUp", "down" => "ArrowDown", "left" => "ArrowLeft", _ => "ArrowRight" };
+
+    /// <summary>A: what the ring is on; in a video with no ring, play or pause (unless the
+    /// stick just aimed the pointer at something); otherwise a click at the pointer.</summary>
+    public async Task Accept()
+    {
+        if (NavActive)
+        {
+            try
+            {
+                var json = JsonSerializer.Deserialize<string>(await _web.ExecuteScriptAsync("window.__lounge && window.__lounge.navCentre ? window.__lounge.navCentre() : ''"));
+                if (!string.IsNullOrEmpty(json))
+                {
+                    using var doc = JsonDocument.Parse(json);
+                    _x = Math.Clamp(doc.RootElement.GetProperty("x").GetDouble(), 0, _vw - 1);
+                    _y = Math.Clamp(doc.RootElement.GetProperty("y").GetDouble(), 0, _vh - 1);
+                }
+                else NavActive = false;
+            }
+            catch (Exception e) when (e is JsonException or InvalidOperationException or KeyNotFoundException) { }
+        }
+        else if (Environment.TickCount64 - _stickAt > 2500 && await Player() != "")
+        {
+            // Space, the player's own key; if the video didn't change, play or pause it directly.
+            var before = await Eval("window.__lounge && window.__lounge.paused ? window.__lounge.paused() : ''");
+            await Key(" ");
+            await Task.Delay(250);
+            if (before is "true" or "false") await Eval($"window.__lounge.toggle({before})");
+            return;
+        }
+        await Click();
+    }
+
+    /// <summary>B in a video: off the player's controls first, then out of full screen.
+    /// False when B should do what it does on any page.</summary>
+    public async Task<bool> BackInPlayer()
+    {
+        var player = await Player();
+        if (player == "") return false;
+        if (NavActive)
+        {
+            NavActive = false;
+            try { await _web.ExecuteScriptAsync("window.__lounge && window.__lounge.navHide && window.__lounge.navHide()"); } catch (Exception) { }
+            return true;
+        }
+        if (player != "fs") return false;
+        try { await _web.ExecuteScriptAsync("document.exitFullscreen && document.exitFullscreen()"); } catch (Exception) { }
+        return true;
     }
 
     public async Task Click()

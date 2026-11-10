@@ -84,6 +84,8 @@ public sealed class HomeScreen : Screen
         _barClock = null;
         _float?.Stop();
         _float = null;
+        _termArt = null;
+        _termMeter = null;
         var (content, root) = T.Def.Layout switch
         {
             HomeLayout.BottomRibbon => LivingRoom(),
@@ -97,6 +99,7 @@ public sealed class HomeScreen : Screen
             HomeLayout.Sidebar => Sidebar(),
             HomeLayout.Hall => Hall(),
             HomeLayout.Floating => Floating(),
+            HomeLayout.Terminal => Terminal(),
             _ => Aurora(),
         };
         _building = false;
@@ -188,13 +191,14 @@ public sealed class HomeScreen : Screen
     private void UpdateHero(FocusItem? now)
     {
         if (now is null || !_entries.TryGetValue(now, out var e)) return;
-        if (_heroTitle is not null) _heroTitle.Text = T.Def.Layout == HomeLayout.Hall ? e.Title.ToUpperInvariant() : e.Title;
+        if (_heroTitle is not null) _heroTitle.Text = T.Def.Layout is HomeLayout.Hall or HomeLayout.Terminal ? e.Title.ToUpperInvariant() : e.Title;
         if (_heroSubtitle is not null) _heroSubtitle.Text = e.Subtitle ?? "";
         // CarPlay's and Daylight's wallpapers stay put (dark art under Daylight's dark type
         // would be unreadable); focus only lights the card.
         if (T.Def.Layout is HomeLayout.Dock or HomeLayout.Glance) { L.Window.Backdrop.SetArt(null); return; }
         // Saga shows the picture in its own place, on the right.
         if (T.Def.Layout == HomeLayout.Hall) { L.Window.Backdrop.SetArt(null); ShowSagaItem(e); return; }
+        if (T.Def.Layout == HomeLayout.Terminal) { L.Window.Backdrop.SetArt(null); ShowTerminalItem(e); return; }
         var art = e.Tile is null ? e.Backdrop ?? e.Art ?? e.Video?.Art : null;
         // Apple TV-like layouts show the art sharp and full; the rest blur it into a wash.
         var full = T.Def.Layout is HomeLayout.TopTabsHero or HomeLayout.Sidebar;
@@ -1785,6 +1789,259 @@ public sealed class HomeScreen : Screen
             _float.Stop();
         }
         return (grid, root);
+    }
+
+    // ------------------------------------------------------------------ Phosphor (terminal)
+
+    private Grid? _termArt;
+    private StackPanel? _termMeter;
+    private TextBlock? _termMeterText;
+    private string? _termList;
+    /// <summary>Phosphor: the destination last chosen, so coming back reopens it.</summary>
+    private string? _termDest;
+    private int _termArtToken;
+    private const double TermArtW = 860, TermArtH = 484;
+    private const int TermSegments = 24;
+
+    /// <summary>A green-screen terminal on a wrist computer: the destinations as tabs along a
+    /// rule at the top (the chosen one bracketed, lit solid while the tabs have focus), the
+    /// chosen one's contents as a list with the selected line lit solid, the focused thing's
+    /// picture redrawn in phosphor green on the right with a block meter of how far you got,
+    /// and a status line of the date, the weather and the music along the bottom. Scanlines
+    /// run over everything.</summary>
+    private (Control, FocusNode) Terminal()
+    {
+        var grid = Ui.Grid("800,*", "Auto,*,Auto");
+        var root = new FocusList(horizontal: false);
+        var sections = HomeModel.Sections().ToDictionary(s => s.Id);
+        var green = T.Text;
+        HomeSection? SectionFor(HomeEntry d) => d.Title switch
+        {
+            "Videos" => sections.GetValueOrDefault("videos"), "Music" => sections.GetValueOrDefault("music"),
+            "Apps & Games" => sections.GetValueOrDefault("apps"), "Web" => sections.GetValueOrDefault("web"), _ => null,
+        };
+
+        // The tabs, standing on a rule with a tick down at each end.
+        var tabsFocus = root.Add(new FocusList(horizontal: true, rememberIndex: true));
+        var listHost = new ContentControl();
+        var listFocus = root.Add(new FocusList(horizontal: false, rememberIndex: false));
+        var tabs = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(40, 0, 0, 0) };
+        var parts = new List<(string Title, Border Box, TextBlock Label)>();
+        void Paint(string chosen, bool focused)
+        {
+            foreach (var (t, box, label) in parts)
+            {
+                var on = t == chosen;
+                box.BorderBrush = on ? green : Brushes.Transparent;
+                box.Background = on && focused ? green : Brushes.Transparent;
+                label.Foreground = on && focused ? T.OnAccent : on ? green : T.TextMuted;
+            }
+        }
+        var destinations = HomeModel.Menu();
+        var reopen = destinations.FirstOrDefault(x => x.Title == (_termDest ?? "Videos")) ?? destinations[0];
+        foreach (var d in destinations)
+        {
+            var label = Ui.Text(d.Title.ToUpperInvariant(), 28, T.TextMuted, FontWeight.Normal, letterSpacing: 2);
+            var box = new Border { BorderThickness = new Thickness(2, 2, 2, 0), Padding = new Thickness(20, 8, 20, 10), Child = label };
+            parts.Add((d.Title, box, label));
+            var card = new Card(box, 0) { FocusScale = 1.0, ShowRing = false, ShowGlow = false };
+            card.Body.Background = Brushes.Transparent;
+            card.Focused += f =>
+            {
+                if (!f) { Paint(_termDest ?? d.Title, focused: false); return; }
+                _termDest = d.Title;
+                Paint(d.Title, focused: true);
+                _contentDebounce?.Dispose();
+                _contentDebounce = DispatcherTimer.RunOnce(() => FillTerminal(listHost, listFocus, d, SectionFor(d), sections.GetValueOrDefault("jump")), TimeSpan.FromMilliseconds(130));
+            };
+            card.Item.Activate = d.Open;
+            _entries[card.Item] = d;
+            tabs.Children.Add(card);
+            tabsFocus.Add(card.Item);
+        }
+        Paint(reopen.Title, focused: false);
+        var header = new Grid { Margin = new Thickness(60, 40, 60, 0), Height = 74 };
+        header.Children.Add(new Border { Height = 2, Background = green, VerticalAlignment = VerticalAlignment.Bottom });
+        foreach (var side in new[] { HorizontalAlignment.Left, HorizontalAlignment.Right })
+            header.Children.Add(new Border { Width = 2, Height = 16, Background = green, HorizontalAlignment = side, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 0, -14) });
+        header.Children.Add(tabs.Align(HorizontalAlignment.Left, VerticalAlignment.Bottom).Margin(0, 0, 0, 2));
+        grid.Children.Add(header.Col(0, 2).Row(0));
+
+        // The list.
+        grid.Children.Add(listHost.Margin(96, 40, 30, 20).Col(0).Row(1));
+
+        // The focused thing: its picture in green, a frame with corner ticks, its name and a meter.
+        _termArt = new Grid { Width = TermArtW, Height = TermArtH, ClipToBounds = true };
+        var frame = new Border
+        {
+            BorderBrush = T.WithAlpha(T.TextColor, 0.7), BorderThickness = new Thickness(2), Padding = new Thickness(6),
+            Background = T.WithAlpha(T.TextColor, 0.04), Child = _termArt, HorizontalAlignment = HorizontalAlignment.Left,
+        };
+        _heroTitle = Ui.Text("", 44, green, FontWeight.Normal, letterSpacing: 1);
+        _heroSubtitle = Ui.Text("", T.Body, T.TextMuted);
+        foreach (var t in new[] { _heroTitle, _heroSubtitle }) { t.TextTrimming = TextTrimming.CharacterEllipsis; t.MaxWidth = TermArtW + 16; t.HorizontalAlignment = HorizontalAlignment.Left; }
+        _termMeter = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, VerticalAlignment = VerticalAlignment.Center };
+        for (int i = 0; i < TermSegments; i++) _termMeter.Children.Add(new Border { Width = 22, Height = 20, BorderBrush = green, BorderThickness = new Thickness(1) });
+        _termMeterText = Ui.Text("", T.Body, green);
+        _termMeterText.VerticalAlignment = VerticalAlignment.Center;
+        var meter = Ui.H(18, _termMeter, _termMeterText);
+        var right = Ui.V(16, frame, _heroTitle.Margin(0, 10, 0, 0), _heroSubtitle, meter.Margin(0, 8, 0, 0));
+        grid.Children.Add(right.Margin(30, 40, 60, 0).Col(1).Row(1));
+
+        // The status line: boxes of the day's numbers, the hints above them.
+        var status = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*,*"), Height = 52 };
+        Border Box(Control content, int col) => new Border
+        {
+            Background = T.WithAlpha(T.TextColor, 0.16), Margin = new Thickness(col == 0 ? 0 : 4, 0, col == 2 ? 0 : 4, 0),
+            Padding = new Thickness(20, 0), Child = content.Align(HorizontalAlignment.Left, VerticalAlignment.Center),
+        };
+        TextBlock Line(string text) => Ui.Text(text.ToUpperInvariant(), 26, green, FontWeight.Normal, letterSpacing: 1).Also(t => t.TextTrimming = TextTrimming.CharacterEllipsis);
+        var culture = System.Globalization.CultureInfo.CurrentCulture;
+        status.Children.Add(Box(Line(Widgets.CalendarOn ? DateTime.Now.ToString("dddd d MMMM yyyy", culture) : "LOUNGE"), 0).Col(0));
+        if (Widgets.WeatherOn)
+        {
+            var weather = Line("");
+            void ShowWeather()
+            {
+                var r = L.Weather.Current;
+                weather.Text = (r is null ? L.Weather.Problem ?? "Getting the weather..." : $"{Math.Round(r.Temp)}° {r.Condition}  ·  {r.Place}").ToUpperInvariant();
+            }
+            ShowWeather();
+            void OnWeather() => Dispatcher.UIThread.Post(() => { if (Avalonia.VisualTree.VisualExtensions.GetVisualRoot(weather) is null && !_building) L.Weather.Updated -= OnWeather; else ShowWeather(); });
+            L.Weather.Updated += OnWeather;
+            status.Children.Add(Box(weather, 1).Col(1));
+        }
+        else status.Children.Add(Box(Line(""), 1).Col(1));
+        var albums = L.Library.Albums().Count;
+        status.Children.Add(Box(Line(CarPlay.MusicOn ? "♪ " + (Playback.NowPlayingLine() ?? "Playing") : albums == 1 ? "1 album" : $"{albums} albums"), 2).Col(2));
+        var bottom = Ui.V(14, HintBar(), status);
+        grid.Children.Add(bottom.Margin(60, 0, 60, 36).Col(0, 2).Row(2));
+
+        // Scanlines over everything, as on the glass.
+        grid.Children.Add(new Border { Background = PixelScene.Scanlines(), Opacity = 0.22, IsHitTestVisible = false }.Col(0, 2).Row(0, 3));
+
+        _termList = null;
+        FillTerminal(listHost, listFocus, reopen, SectionFor(reopen), sections.GetValueOrDefault("jump"));
+        root.Index = 1;
+        return (grid, root);
+    }
+
+    /// <summary>The chosen destination's contents as terminal lines: a caret and the name,
+    /// what it holds or how much is left on the right; the selected line lit solid.</summary>
+    private void FillTerminal(ContentControl host, FocusList focus, HomeEntry dest, HomeSection? section, HomeSection? jump)
+    {
+        if (_termList == dest.Title && host.Content is not null) return;
+        _termList = dest.Title;
+        foreach (var item in focus.Items.ToList()) _entries.Remove(item);
+        focus.Clear();
+        var items = new List<HomeEntry>();
+        if (dest.Title == "Videos" && jump is not null) items.AddRange(jump.Entries.Take(6));
+        if (section is not null) items.AddRange(section.Entries);
+        if (items.Count == 0) items.Add(dest);
+        var stack = new StackPanel { Spacing = 2 };
+        stack.Children.Add(Ui.Text($"{dest.Title.ToUpperInvariant()} [{items.Count}]", T.Caption, T.TextMuted, FontWeight.Normal, letterSpacing: 3).Margin(14, 0, 0, 12));
+        foreach (var e in items.Take(40))
+        {
+            var caret = Ui.Text(">", 30, T.Text);
+            caret.Opacity = 0;
+            var name = Ui.Text(e.Title.ToUpperInvariant(), 30, T.Text, FontWeight.Normal);
+            name.TextTrimming = TextTrimming.CharacterEllipsis;
+            var side = Ui.Text((e.Progress >= 0 ? $"{Math.Round(e.Progress * 100)}%" : e.Subtitle ?? "").ToUpperInvariant(), T.Caption, T.TextMuted);
+            side.TextTrimming = TextTrimming.CharacterEllipsis;
+            side.MaxWidth = 200;
+            side.VerticalAlignment = VerticalAlignment.Center;
+            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
+            row.Children.Add(caret.Margin(0, 0, 12, 0));
+            row.Children.Add(name.Col(1));
+            row.Children.Add(side.Margin(16, 0, 0, 0).Col(2));
+            var card = new Card(row.Margin(14, 6, 16, 6), 0) { FocusScale = 1.0, ShowRing = false, ShowGlow = false, HorizontalAlignment = HorizontalAlignment.Stretch };
+            card.Body.Background = Brushes.Transparent;
+            card.Focused += f =>
+            {
+                card.Body.Background = f ? T.Text : Brushes.Transparent;
+                caret.Foreground = name.Foreground = side.Foreground = f ? T.OnAccent : T.Text;
+                if (!f) side.Foreground = T.TextMuted;
+                caret.Opacity = f ? 1 : 0;
+            };
+            card.Item.Activate = e.Open;
+            card.Item.Secondary = e.Options;
+            _entries[card.Item] = e;
+            stack.Children.Add(card);
+            focus.Add(card.Item);
+            _fallbackFocus ??= card.Item;
+        }
+        host.Content = new ScrollViewer { Content = stack, VerticalScrollBarVisibility = ScrollBarVisibility.Hidden, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        if (!_building) RefreshFocus();
+    }
+
+    /// <summary>The focused thing's picture, redrawn in phosphor green (tinted at once, then
+    /// properly monochrome when the picture has loaded), and its progress in blocks.</summary>
+    private void ShowTerminalItem(HomeEntry e)
+    {
+        if (_termArt is null) return;
+        var token = ++_termArtToken;
+        _termArt.Children.Clear();
+        _termArt.Children.Add(HomeModel.Art(e, TermArtW, TermArtH));
+        _termArt.Children.Add(new Border { Background = T.WithAlpha(T.TextColor, 0.3), IsHitTestVisible = false });
+        _termArt.Children.Add(new Border { Background = PixelScene.Scanlines(), Opacity = 0.5, IsHitTestVisible = false });
+        var path = e.Tile is null ? e.Backdrop ?? e.Art ?? e.Video?.Art : null;
+        if (path is not null) _ = GreenPicture(path, token);
+        if (_termMeter is not null && _termMeterText is not null)
+        {
+            var on = e.Progress >= 0;
+            _termMeter.IsVisible = _termMeterText.IsVisible = on;
+            var filled = (int)Math.Round(Math.Clamp(e.Progress, 0, 1) * TermSegments);
+            for (int i = 0; i < _termMeter.Children.Count; i++)
+                if (_termMeter.Children[i] is Border seg) seg.Background = i < filled ? T.Text : Brushes.Transparent;
+            _termMeterText.Text = on ? $"{Math.Round(e.Progress * 100)}%" : "";
+        }
+    }
+
+    private async Task GreenPicture(string path, int token)
+    {
+        var bitmap = await ImageCache.LoadAsync(path, (int)TermArtW);
+        if (bitmap is null || token != _termArtToken) return;
+        int w = bitmap.PixelSize.Width, h = bitmap.PixelSize.Height;
+        if (w <= 0 || h <= 0) return;
+        var pixels = new byte[w * h * 4];
+        var pin = System.Runtime.InteropServices.GCHandle.Alloc(pixels, System.Runtime.InteropServices.GCHandleType.Pinned);
+        try { bitmap.CopyPixels(new PixelRect(0, 0, w, h), pin.AddrOfPinnedObject(), pixels.Length, w * 4); }
+        catch (Exception x) when (x is NotSupportedException or InvalidOperationException or ArgumentException) { return; }
+        finally { pin.Free(); }
+        var c = T.TextColor;
+        await Task.Run(() => Phosphorise(pixels, c));
+        if (token != _termArtToken || _termArt is null) return;
+        var image = new Image { Source = ImageCache.FromBgra(pixels, w, h), Stretch = Stretch.UniformToFill, Width = TermArtW, Height = TermArtH };
+        // The picture replaces the tinted stand-in; the scanlines stay over it.
+        _termArt.Children.Clear();
+        _termArt.Children.Add(image);
+        _termArt.Children.Add(new Border { Background = PixelScene.Scanlines(), Opacity = 0.5, IsHitTestVisible = false });
+    }
+
+    /// <summary>Brightness only, mapped from black through the phosphor's green to a pale
+    /// green-white in the highlights. Red and blue count alike, so it reads BGRA and RGBA the same.</summary>
+    internal static void Phosphorise(byte[] px, Color phosphor)
+    {
+        for (int i = 0; i < px.Length; i += 4)
+        {
+            var lum = (px[i] + 2 * px[i + 1] + px[i + 2]) / 1020.0;
+            lum = Math.Pow(lum, 1.15);
+            double r, g, b;
+            if (lum < 0.8)
+            {
+                var k = lum / 0.8;
+                r = 2 + (phosphor.R - 2) * k; g = 8 + (phosphor.G - 8) * k; b = 4 + (phosphor.B - 4) * k;
+            }
+            else
+            {
+                var k = (lum - 0.8) / 0.2;
+                r = phosphor.R + (200 - phosphor.R) * k; g = phosphor.G + (255 - phosphor.G) * k; b = phosphor.B + (215 - phosphor.B) * k;
+            }
+            px[i] = (byte)Math.Clamp(b, 0, 255);
+            px[i + 1] = (byte)Math.Clamp(g, 0, 255);
+            px[i + 2] = (byte)Math.Clamp(r, 0, 255);
+            px[i + 3] = 255;
+        }
     }
 
     // ------------------------------------------------------------------ input

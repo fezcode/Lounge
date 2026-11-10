@@ -319,6 +319,7 @@ public sealed class Backdrop : Grid
         if (d.Backdrop == BackdropStyle.Liquid) Liquid(a, b, c);
         if (d.Backdrop == BackdropStyle.Snowfall) Snowfall(a, b, c);
         if (d.Backdrop == BackdropStyle.Haze) Haze(a, b, c);
+        if (d.Backdrop == BackdropStyle.Crt) Crt(a, b, c);
         var snowy = d.Backdrop == BackdropStyle.Snowfall;
 
         _scrim.Background = new LinearGradientBrush
@@ -372,6 +373,46 @@ public sealed class Backdrop : Grid
             }
             // Across and back every few minutes.
             move.X = -1000 + 1600 * (0.5 + 0.5 * Math.Sin(t * 0.02));
+        };
+    }
+
+    /// <summary>Crt: an old green screen. A glow in the middle of the tube, fine scanlines, a
+    /// faint bright band rolling slowly down as the picture refreshes, and the corners
+    /// darkened by the curve of the glass.</summary>
+    private void Crt(Color a, Color b, Color c)
+    {
+        RadialGradientBrush Radial(params (Color Colour, double At)[] stops)
+        {
+            var brush = new RadialGradientBrush
+            {
+                Center = new RelativePoint(0.5, 0.46, RelativeUnit.Relative), GradientOrigin = new RelativePoint(0.5, 0.46, RelativeUnit.Relative),
+                RadiusX = new RelativeScalar(0.72, RelativeUnit.Relative), RadiusY = new RelativeScalar(0.78, RelativeUnit.Relative),
+            };
+            foreach (var (colour, at) in stops) brush.GradientStops.Add(new GradientStop(colour, at));
+            return brush;
+        }
+        _scene.Children.Add(new Border { Background = Radial((a, 0), (c, 0.62), (Colors.Black, 1)) });
+        var roll = new Border
+        {
+            Height = 320, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top, IsHitTestVisible = false, RenderTransform = new TranslateTransform(),
+            Background = new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative), EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
+                GradientStops =
+                {
+                    new GradientStop(Color.FromArgb(0, b.R, b.G, b.B), 0),
+                    new GradientStop(Color.FromArgb(16, b.R, b.G, b.B), 0.75),
+                    new GradientStop(Color.FromArgb(0, b.R, b.G, b.B), 1),
+                },
+            },
+        };
+        _scene.Children.Add(roll);
+        _scene.Children.Add(new Border { Background = PixelScene.Scanlines(), Opacity = 0.6, IsHitTestVisible = false });
+        _scene.Children.Add(new Border { Background = Radial((Colors.Transparent, 0.62), (Color.FromArgb(200, 0, 0, 0), 1)), IsHitTestVisible = false });
+        _animate = t =>
+        {
+            var height = _scene.Bounds.Height > 0 ? _scene.Bounds.Height : 1080;
+            if (roll.RenderTransform is TranslateTransform move) move.Y = t * 60 % (height + 640) - 320;
         };
     }
 

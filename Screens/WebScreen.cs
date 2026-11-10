@@ -402,7 +402,7 @@ public sealed class WebScreen : Screen
         string Eval(string r) => r.Trim('"');
         var pad = _pad!;
         // Controller input reaches the page as trusted events (not via the page's own gamepad code).
-        await c.CoreWebView2.ExecuteScriptAsync("window.__loungeKeys = []; addEventListener('keydown', e => window.__loungeKeys.push(e.key + (e.isTrusted ? '' : '?')), true); window.__loungeClicks = 0; addEventListener('click', e => { if (e.isTrusted) window.__loungeClicks++; }, true);");
+        await c.CoreWebView2.ExecuteScriptAsync("window.__loungeKeys = []; addEventListener('keydown', e => window.__loungeKeys.push(e.key + (e.isTrusted ? '' : '?')), true); window.__loungeClicks = 0; addEventListener('click', e => { if (e.isTrusted) window.__loungeClicks++; }, true); addEventListener('mousemove', e => window.__mx = e.clientX + ',' + e.clientY, true);");
         var focusBefore = Eval(await c.CoreWebView2.ExecuteScriptAsync("(document.activeElement && (document.activeElement.tagName + '.' + document.activeElement.className)).slice(0, 80)"));
         if (Environment.GetEnvironmentVariable("LOUNGE_WEB_KEYS") is null)
             foreach (var k in new[] { "ArrowDown", "ArrowRight", "ArrowRight" }) { await pad.Key(k); await Task.Delay(500); }
@@ -421,6 +421,10 @@ public sealed class WebScreen : Screen
             else if (step.StartsWith("volume:")) { await pad.Volume(int.Parse(step[7..]), false); await Task.Delay(300); }
             else if (step.StartsWith("hash:")) { await c.CoreWebView2.ExecuteScriptAsync($"location.hash = {System.Text.Json.JsonSerializer.Serialize(step[5..])}"); await Task.Delay(700); }
             else if (step.StartsWith("hold:")) { var parts = step.Split(':'); await pad.Key(parts[2], int.Parse(parts[1])); await Task.Delay(700); }
+            else if (step.StartsWith("nav:")) { await pad.DPad(step[4..]); await Task.Delay(500); }
+            else if (step == "accept") { await pad.Accept(); await Task.Delay(1500); }
+            else if (step.StartsWith("zoom:")) { SetZoom(double.Parse(step[5..], System.Globalization.CultureInfo.InvariantCulture)); await Task.Delay(1200); }
+            else if (step.StartsWith("move:")) { var p = step.Split(':'); pad.MovePointer(double.Parse(p[1]), double.Parse(p[2])); await Task.Delay(400); }
             else if (step == "jsclick") { await c.CoreWebView2.ExecuteScriptAsync("(document.querySelector('.zylon-focus') || document.activeElement).click()"); await Task.Delay(700); }
             else if (step == "mouse")
             {
@@ -432,7 +436,7 @@ public sealed class WebScreen : Screen
                 await Task.Delay(700);
             }
             else { await pad.Key(step); await Task.Delay(700); }
-            walk.Add(step + " -> " + Eval(await c.CoreWebView2.ExecuteScriptAsync("(() => { const all = document.querySelectorAll('.zylon-focus'); const e = all.length ? all[all.length - 1] : document.activeElement; return e ? (e.innerText || e.tagName).replace(/\\s+/g, ' ').slice(0, 40) : '' })()")));
+            walk.Add(step + " -> " + (step == "accept" ? "paused=" + Eval(await c.CoreWebView2.ExecuteScriptAsync("window.__lounge.paused()")) + " " : "") + (step.StartsWith("nav:") || step.StartsWith("zoom:") ? pad.Measured + " ring@" + Eval(await c.CoreWebView2.ExecuteScriptAsync("window.__lounge.navCentre()")) + " " : "") + Eval(await c.CoreWebView2.ExecuteScriptAsync("(() => { const all = document.querySelectorAll('.zylon-focus'); const e = all.length ? all[all.length - 1] : document.activeElement; return e ? (e.innerText || e.tagName).replace(/\\s+/g, ' ').slice(0, 40) : '' })()")));
         }
         // LOUNGE_WEB_EVAL: an expression to report after the walk (what the page looks like then).
         var probe = Environment.GetEnvironmentVariable("LOUNGE_WEB_EVAL") is { Length: > 0 } expr ? Eval(await c.CoreWebView2.ExecuteScriptAsync(expr)) : null;
@@ -461,7 +465,7 @@ public sealed class WebScreen : Screen
         Lounge.Shell.SelfCheck.Report("web", new
         {
             loaded, title, gamepadApi, padsVisibleToPage = pads, drm, drmMatrix, hdcp, allOff, probe, frames = _frames.Count, extensions,
-            pointerMode = pad.PointerMode, injected, keysReceived = keys, focusBefore, focusAfter, trustedClicks = clicks, appBridge, video, text, walk, geometry = _host.Geometry(), failedRequests = _failedRequests.ToArray().TakeLast(60).ToList(),
+            pointerMode = pad.PointerMode, injected, keysReceived = keys, focusBefore, focusAfter, trustedClicks = clicks, appBridge, video, text, walk, geometry = _host.Geometry(), pointerArea = pad.Measured, failedRequests = _failedRequests.ToArray().TakeLast(60).ToList(),
             errors = Eval(await c.CoreWebView2.ExecuteScriptAsync("(window.__loungeErrors || []).slice(-15).join(' | ')")),
             userAgent = Eval(await c.CoreWebView2.ExecuteScriptAsync("navigator.userAgent")),
             zoom = c.ZoomFactor,
@@ -508,19 +512,22 @@ public sealed class WebScreen : Screen
         if (e.Phase is not (ActionPhase.Pressed or ActionPhase.Repeated)) return true;
         switch (e.Action)
         {
-            case Act.Up: _ = pad.Key("ArrowUp"); return true;
-            case Act.Down: _ = pad.Key("ArrowDown"); return true;
-            case Act.Left: _ = pad.Key("ArrowLeft"); return true;
-            case Act.Right: _ = pad.Key("ArrowRight"); return true;
+            case Act.Up: _ = pad.PointerMode ? pad.DPad("up") : pad.Key("ArrowUp"); return true;
+            case Act.Down: _ = pad.PointerMode ? pad.DPad("down") : pad.Key("ArrowDown"); return true;
+            case Act.Left: _ = pad.PointerMode ? pad.DPad("left") : pad.Key("ArrowLeft"); return true;
+            case Act.Right: _ = pad.PointerMode ? pad.DPad("right") : pad.Key("ArrowRight"); return true;
+            case Act.PrevSection or Act.NextSection:
+                _ = Section(pad, web, e.Action == Act.NextSection, e.Phase == ActionPhase.Repeated);
+                return true;
         }
         if (e.Phase != ActionPhase.Pressed) return true;
         switch (e.Action)
         {
             case Act.Accept:
-                if (pad.PointerMode) _ = pad.Click(); else _ = pad.Key("Enter");
+                if (pad.PointerMode) _ = pad.Accept(); else _ = pad.Key("Enter");
                 return true;
             case Act.Back:
-                Back(pad, web);
+                _ = Back(pad, web);
                 return true;
             case Act.ContextMenu:
                 Options();
@@ -531,12 +538,6 @@ public sealed class WebScreen : Screen
             case Act.Tertiary:
                 _ = TypeIntoFocused(web);
                 return true;
-            case Act.PrevSection:
-                if (web.CanGoBack) web.GoBack();
-                return true;
-            case Act.NextSection:
-                if (web.CanGoForward) web.GoForward();
-                return true;
         }
         return true;   // nothing else leaks to Lounge's screens underneath
     }
@@ -544,11 +545,22 @@ public sealed class WebScreen : Screen
     /// <summary>B: TV-style pages get their own Back key (YouTube TV asks before exiting and
     /// then closes, which brings Lounge back); other pages go back a page, and leave from
     /// the first one.</summary>
-    private void Back(WebPad pad, CoreWebView2 web)
+    private async Task Back(WebPad pad, CoreWebView2 web)
     {
         if (!pad.PointerMode) { _ = pad.Key("Escape"); return; }
+        if (await pad.BackInPlayer()) return;
         if (web.CanGoBack) web.GoBack();
         else Leave();
+    }
+
+    /// <summary>LT/RT: seek in a video (the player's own arrow keys), back and forward a
+    /// page anywhere else. Held, they keep seeking.</summary>
+    private static async Task Section(WebPad pad, CoreWebView2 web, bool forward, bool repeated)
+    {
+        if (pad.PointerMode && await pad.Player() != "") { await pad.Key(forward ? "ArrowRight" : "ArrowLeft"); return; }
+        if (repeated) return;
+        if (forward) { if (web.CanGoForward) web.GoForward(); }
+        else if (web.CanGoBack) web.GoBack();
     }
 
     /// <summary>"Identify to sites as" Edge or Chrome: WebView2 announces itself as "Microsoft
@@ -625,6 +637,7 @@ public sealed class WebScreen : Screen
             var r = doc.RootElement;
             var kind = r.GetProperty("kind").GetString();
             if (kind == "diag") { _diag?.Write(r.GetProperty("line").GetString() ?? ""); return; }
+            if (kind == "size") { _pad?.Resized(r.GetProperty("w").GetDouble(), r.GetProperty("h").GetDouble()); return; }
             if (kind != "text" || _pad is not { PointerMode: true }) return;
             var password = r.TryGetProperty("password", out var pw) && pw.GetBoolean();
             Type(r.GetProperty("label").GetString() ?? "", password ? "" : r.GetProperty("value").GetString() ?? "", r.GetProperty("search").GetBoolean(), password);
