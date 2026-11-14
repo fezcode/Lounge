@@ -182,6 +182,24 @@ public sealed class AmbientSynth
                 [(70, 1), (74, 1), (75, 2), (79, 3), (77, 1), (75, 4), (0, 4)],
             ],
         },
+        // After hours at 72 bpm in B minor: suspended ninths under a soft glass ostinato,
+        // a plucked bass on alternate beats and a spare, descending electric-piano phrase.
+        ["signal"] = new("signal", "Lounge Signal",
+            [[35, 47, 54, 61, 62], [43, 50, 57, 59, 66], [38, 50, 57, 61, 64], [40, 47, 54, 59, 62]],
+            8 * 60 / 72.0, 0.09, 0.42, 7, 0.08, 0.07, 2.4, [71, 73, 74, 76, 78, 81, 83, 85], 0.42, 0.58, 0.06)
+        {
+            Tempo = 72, Division = 2,
+            Arp = [0, -1, 3, -1, 2, -1, -1, 4, -1, 2, -1, -1, 3, -1, -1, -1],
+            ArpOctave = 24, ArpLevel = 0.1, ArpTimbre = Timbre.Glass,
+            BassLevel = 0.18, BassBeats = 2, BassTimbre = Timbre.Pluck,
+            MelodyLevel = 0.22, MelodyTimbre = Timbre.Felt,
+            Phrases =
+            [
+                [(78, 2), (74, 1), (73, 1), (71, 4), (0, 4), (73, 2), (74, 2)],
+                [(81, 3), (78, 1), (76, 2), (74, 2), (73, 4), (0, 4)],
+                [(85, 2), (83, 2), (78, 2), (76, 2), (74, 4), (0, 4)],
+            ],
+        },
     };
 
     private readonly AmbientPreset _p;

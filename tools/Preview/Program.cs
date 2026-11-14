@@ -5,6 +5,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Lounge.Controls;
 using Lounge.Core;
 using Lounge.Core.Input;
@@ -135,6 +136,21 @@ internal static class Program
                 Shot($"{t}-toast");
                 _window.GoHome();
                 Pump(10);
+                if (t == "signal")
+                {
+                    // Record the destination-driven artwork as well as the shared screens.
+                    // Rebuilding here also uses the posters decoded during the screen tour.
+                    foreach (var toasts in _window.GetVisualDescendants().OfType<ToastHost>()) toasts.Children.Clear();
+                    var home = _window.Find<HomeScreen>()!;
+                    home.Rebuild();
+                    Shot("signal-home");
+                    home.Handle(new ActionEvent(Act.Right, ActionPhase.Pressed));
+                    Shot("signal-home-music");
+                    home.Handle(new ActionEvent(Act.Right, ActionPhase.Pressed));
+                    Shot("signal-home-apps");
+                    home.Handle(new ActionEvent(Act.Left, ActionPhase.Pressed));
+                    home.Handle(new ActionEvent(Act.Left, ActionPhase.Pressed));
+                }
             }
 
             if (only is null) RenderBanner();
@@ -188,6 +204,7 @@ internal static class Program
         for (int i = 0; i < rounds; i++)
         {
             Dispatcher.UIThread.RunJobs();
+            AvaloniaHeadlessPlatform.ForceRenderTimerTick();
             Thread.Sleep(20);
         }
     }
@@ -196,7 +213,9 @@ internal static class Program
     {
         Pump();
         var until = DateTime.Now.AddSeconds(15);
-        while (ImageCache.Busy && DateTime.Now < until) Pump(5);
+        while ((ImageCache.Busy || T.Def.Id == "signal" && !_window.Backdrop.SignalSceneReady) && DateTime.Now < until) Pump(5);
+        if (T.Def.Id == "signal" && !_window.Backdrop.SignalSceneReady)
+            throw new InvalidOperationException("Signal artwork did not load for " + name);
         Pump(5);
         // Freed straight away: left to the garbage collector, a couple of hundred full-screen
         // frames piled up in native memory and Skia crashed encoding a later one.

@@ -43,6 +43,9 @@ public enum HomeLayout
     /// thing's picture redrawn in phosphor green on the right with a block meter under it, and
     /// a status line of the day's numbers along the bottom.</summary>
     Terminal,
+    /// <summary>Lounge Signal: luminous artwork behind a typographic masthead, a horizontal
+    /// destination selector and a compact collection shelf.</summary>
+    Signal,
 }
 
 /// <summary>A procedural default backdrop, so themes need no shipped wallpapers. Projector:
@@ -55,7 +58,7 @@ public enum HomeLayout
 /// fog drifting and snow falling. Haze: a soft out-of-focus wash of teal and warm peach, like
 /// a photograph seen through frosted glass. Crt: a dark green screen with scanlines, a bright
 /// band rolling slowly down it and the corners darkened by the curve of the glass.</summary>
-public enum BackdropStyle { Aurora, Sunset, Fanart, Waves, Glow, Projector, Pixel, Drive, Mist, Liquid, Snowfall, Haze, Crt }
+public enum BackdropStyle { Aurora, Sunset, Fanart, Waves, Glow, Projector, Pixel, Drive, Mist, Liquid, Snowfall, Haze, Crt, Signal }
 
 /// <summary>Everything a theme decides. Colours are #RRGGBB or #AARRGGBB strings so Core
 /// stays free of Avalonia; the Shell turns them into brushes.</summary>
@@ -108,6 +111,9 @@ public sealed record ThemeDefinition
     /// <summary>Panels are liquid glass: a bright rim catching light on the top edge and a
     /// sheen across the top, over a dark tint.</summary>
     public bool LiquidGlass { get; init; }
+
+    /// <summary>Cards retain a subtle outline while unfocused.</summary>
+    public bool OutlineCards { get; init; }
 
     /// <summary>The accent in force: the user's override, or the theme's own.</summary>
     public ThemeDefinition WithAccent(string? accent) =>
@@ -310,7 +316,23 @@ public static class Themes
         AmbientPreset = "phosphor", SoundSet = "phosphor",
     };
 
-    public static readonly IReadOnlyList<ThemeDefinition> All = [Aurora, LivingRoom, Kodi, ConsoleOne, Series, ScreeningRoom, Arcade, CarPlay, Daylight, Liquid, Saga, Ambient, Phosphor];
+    /// <summary>Fezcodex's Lounge Signal: character-textured light, an icy-blue focus and
+    /// small, crisp panels over indigo black, with angular display type and a quiet score.</summary>
+    public static readonly ThemeDefinition Signal = new()
+    {
+        Id = "signal", Name = "Signal", Layout = HomeLayout.Signal, Backdrop = BackdropStyle.Signal,
+        Bg0 = "#03040A", Bg1 = "#020308",
+        BackdropA = "#7DDFFF", BackdropB = "#F2458F", BackdropC = "#E0A7FF",
+        Surface = "#C40B1024", SurfaceStrong = "#F50B1020", Line = "#557D91BA",
+        Text = "#F5F6FF", TextMuted = "#B4B9D0", TextFaint = "#8B93B2",
+        Accent = "#7DDFFF", OnAccent = "#03040A", Focus = "#7DDFFF",
+        Danger = "#F2458F", Success = "#9FE9CF",
+        Radius = 4, RadiusLarge = 8, FocusScale = 1.025, SpringStiffness = 340, SpringDamping = 32,
+        TitleWeight = 600, BodyFont = "Manrope", DisplayFont = "Chakra Petch", ArtTone = "#343964", OutlineCards = true,
+        AmbientPreset = "signal", SoundSet = "signal",
+    };
+
+    public static readonly IReadOnlyList<ThemeDefinition> All = [Aurora, LivingRoom, Kodi, ConsoleOne, Series, ScreeningRoom, Arcade, CarPlay, Daylight, Liquid, Saga, Ambient, Phosphor, Signal];
 
     public static ThemeDefinition Get(string id) => All.FirstOrDefault(t => t.Id == id) ?? Aurora;
 }

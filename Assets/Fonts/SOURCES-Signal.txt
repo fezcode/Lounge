@@ -1,0 +1,14 @@
+Signal typography follows the Lounge design page in Fezcodex.
+
+Chakra Petch (Regular, Medium, SemiBold, Bold):
+https://github.com/google/fonts/tree/main/ofl/chakrapetch
+License: OFL-ChakraPetch.txt
+
+Manrope (Regular, Medium, SemiBold, Bold):
+https://github.com/google/fonts/tree/main/ofl/manrope
+License: OFL-Manrope.txt
+Static 400/500/600/700 instances generated from Manrope[wght].ttf with
+fontTools.varLib.instancer, including updated font style names. This avoids
+the native renderer selecting the variable font's ExtraLight default.
+
+Downloaded from the Google Fonts repository on 2026-11-14.

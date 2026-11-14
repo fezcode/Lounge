@@ -87,6 +87,12 @@ public class Card : Panel
         ShapeGlow();
         Children.Add(_glow);
         Children.Add(Body);
+        if (T.Def.OutlineCards)
+            Children.Add(new Border
+            {
+                CornerRadius = new CornerRadius(r), BorderBrush = T.Line,
+                BorderThickness = new Thickness(1), IsHitTestVisible = false,
+            });
         Children.Add(_ring);
 
         Item = new FocusItem(this, tag) { FocusChanged = SetFocused };

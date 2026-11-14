@@ -158,7 +158,12 @@ public static class Widgets
             Ui.Text(now.ToString("MMMM", CultureInfo.CurrentCulture), T.Body, T.Text, FontWeight.SemiBold),
             Ui.Text(now.Year.ToString(CultureInfo.CurrentCulture), T.Caption, T.TextMuted));
         words.VerticalAlignment = VerticalAlignment.Center;
-        return Ui.H(18, day, words);
+        // The words need the remaining width, rather than an unbounded horizontal
+        // stack, so long weekday/month names respect the card's right padding.
+        var layout = Ui.Grid("Auto,18,*", "*");
+        layout.Children.Add(day.Col(0));
+        layout.Children.Add(words.Col(2));
+        return layout;
     }
 
     private static Control CalendarPanel(double w, double h)

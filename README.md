@@ -54,9 +54,11 @@ button by pressing the new one. Holds and combinations work too.
 
 ## What is inside
 
-- **Five themes, five homes.** Aurora (Apple TV-like hero and rows), Living Room
+- **Fourteen themes, fourteen homes.** Aurora (Apple TV-like hero and rows), Living Room
   (a smart-TV launcher ribbon), Kodi Classic (the XBMC side menu over fanart),
-  Console One (a PS5-style icon row) and Series (an Xbox-style tile grid). Each
+  Console One (a PS5-style icon row), Series (an Xbox-style tile grid), Screening
+  Room, Arcade, Motorcar Recital, Daylight, Liquid Glass, Saga, Ambient, Phosphor,
+  and Signal (Fezcodex's luminous artwork, oversized type and cyan destination tabs). Each
   has its own colours, motion, interface sounds, original ambient music and its
   own wallpaper (any picture from Files). Tiles can be pinned to the front,
   moved and hidden.

@@ -373,6 +373,7 @@ public class AudioAndThemeTests
     [InlineData("console")]
     [InlineData("series")]
     [InlineData("screening")]
+    [InlineData("signal")]
     public void Ambient_is_audible_bounded_and_deterministic(string preset)
     {
         var a = new float[AmbientSynth.SampleRate * 2 * 4];
@@ -398,12 +399,13 @@ public class AudioAndThemeTests
     }
 
     [Fact]
-    public void Thirteen_themes_with_distinct_layouts_and_ambient()
+    public void Fourteen_themes_with_distinct_layouts_and_ambient()
     {
         var all = Lounge.Core.Themes.Themes.All;
-        Assert.Equal(13, all.Count);
-        Assert.Equal(13, all.Select(t => t.Layout).Distinct().Count());
-        Assert.Equal(13, all.Select(t => t.Backdrop).Distinct().Count());
+        Assert.Equal(14, all.Count);
+        Assert.Equal(all.Count, all.Select(t => t.Layout).Distinct().Count());
+        Assert.Equal(all.Count, all.Select(t => t.Backdrop).Distinct().Count());
+        Assert.Equal(all.Count, all.Select(t => t.AmbientPreset).Distinct().Count());
         Assert.Equal(all.Select(t => t.Id), Lounge.Core.Settings.SettingsSchema.Themes.Select(c => c.Value));
         Assert.All(all, t => Assert.True(AmbientSynth.Presets.ContainsKey(t.AmbientPreset)));
         Assert.Equal("#FF375F", Lounge.Core.Themes.Themes.Aurora.WithAccent("#FF375F").Accent);

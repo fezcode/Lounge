@@ -22,6 +22,14 @@ public sealed class Backdrop : Grid
     private readonly Border _wallpaper = new() { Opacity = 0 };
     private bool _aFront;
     private string? _art;
+    private readonly Border _signalA = new() { Opacity = 0, IsHitTestVisible = false };
+    private readonly Border _signalB = new() { Opacity = 0, IsHitTestVisible = false };
+    private readonly Grid _signalPictures = new() { IsHitTestVisible = false };
+    private readonly Spring _signalFadeA, _signalFadeB;
+    private bool _signalAFront;
+    private string? _signalScene;
+    private string? _signalDisplayedScene;
+    private int _signalGeneration;
     private readonly Spring _fadeA, _fadeB, _wallFade;
     private readonly DispatcherTimer _timer;
     private double _t;
@@ -40,6 +48,10 @@ public sealed class Backdrop : Grid
         _fadeA = new Spring(0, v => _artA.Opacity = v, 120, 22);
         _fadeB = new Spring(0, v => _artB.Opacity = v, 120, 22);
         _wallFade = new Spring(0, v => _wallpaper.Opacity = v, 120, 22);
+        _signalFadeA = new Spring(0, v => _signalA.Opacity = Math.Clamp(v, 0, 1), 90, 20);
+        _signalFadeB = new Spring(0, v => _signalB.Opacity = Math.Clamp(v, 0, 1), 90, 20);
+        _signalPictures.Children.Add(_signalA);
+        _signalPictures.Children.Add(_signalB);
         _timer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(40) };
         _timer.Tick += (_, _) => Step();
         PropertyChanged += (_, e) =>
@@ -64,6 +76,13 @@ public sealed class Backdrop : Grid
     public void Restyle()
     {
         _scene.Children.Clear();
+        _signalGeneration++;
+        _signalScene = null;
+        _signalDisplayedScene = null;
+        _signalAFront = false;
+        _signalFadeA.Snap(0);
+        _signalFadeB.Snap(0);
+        _signalA.Background = _signalB.Background = null;
         _animate = null;
         var d = T.Def;
         var bg = Color.Parse(d.Bg0);
@@ -320,7 +339,9 @@ public sealed class Backdrop : Grid
         if (d.Backdrop == BackdropStyle.Snowfall) Snowfall(a, b, c);
         if (d.Backdrop == BackdropStyle.Haze) Haze(a, b, c);
         if (d.Backdrop == BackdropStyle.Crt) Crt(a, b, c);
+        if (d.Backdrop == BackdropStyle.Signal) Signal();
         var snowy = d.Backdrop == BackdropStyle.Snowfall;
+        var signal = d.Backdrop == BackdropStyle.Signal;
 
         _scrim.Background = new LinearGradientBrush
         {
@@ -329,13 +350,80 @@ public sealed class Backdrop : Grid
             GradientStops =
             {
                 // The landscape keeps its mountains: a lighter veil than the abstract scenes need.
-                new GradientStop(Color.FromArgb(snowy ? (byte)15 : (byte)40, bg.R, bg.G, bg.B), 0),
-                new GradientStop(Color.FromArgb(snowy ? (byte)55 : (byte)110, bg.R, bg.G, bg.B), 0.55),
+                new GradientStop(Color.FromArgb(snowy || signal ? (byte)15 : (byte)40, bg.R, bg.G, bg.B), 0),
+                new GradientStop(Color.FromArgb(snowy ? (byte)55 : signal ? (byte)175 : (byte)110, bg.R, bg.G, bg.B), 0.55),
                 new GradientStop(Color.FromArgb(snowy ? (byte)150 : (byte)235, bg.R, bg.G, bg.B), 1),
             },
         };
         _animate?.Invoke(_t);
         UpdateTimer();
+    }
+
+    /// <summary>Signal's supplied character textures stay sharp behind a local left veil;
+    /// the shared bottom scrim keeps the collection and controller hints legible.</summary>
+    private void Signal()
+    {
+        _scene.Children.Add(_signalPictures);
+        _scene.Children.Add(new Border
+        {
+            IsHitTestVisible = false,
+            Background = new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                EndPoint = new RelativePoint(1, 0, RelativeUnit.Relative),
+                GradientStops =
+                {
+                    new GradientStop(Color.Parse("#B303040A"), 0),
+                    new GradientStop(Color.Parse("#7503040A"), 0.28),
+                    new GradientStop(Color.Parse("#1203040A"), 0.65),
+                    new GradientStop(Color.Parse("#2603040A"), 1),
+                },
+            },
+        });
+        SetSignalScene("signal-bloom");
+    }
+
+    /// <summary>The requested Signal atmosphere, or null when another theme is active.</summary>
+    public string? SignalScene => _signalScene;
+
+    /// <summary>True after the requested atmosphere has reached the visual layer.</summary>
+    public bool SignalSceneReady => _signalScene is not null && _signalScene == _signalDisplayedScene;
+
+    /// <summary>Changes Signal's atmosphere after a destination move. Only the latest
+    /// request may land, and leaving the theme invalidates every outstanding load.</summary>
+    public void SetSignalScene(string scene)
+    {
+        if (T.Def.Backdrop != BackdropStyle.Signal) return;
+        scene = scene is "night-frequency" or "chromatic-drift" or "magenta-horizon" ? scene : "signal-bloom";
+        if (scene == _signalScene) return;
+        _signalScene = scene;
+        var generation = ++_signalGeneration;
+        var path = $"avares://{typeof(Backdrop).Assembly.GetName().Name}/Assets/Backgrounds/Signal/{scene}.png";
+        _ = LoadSignalScene(scene, path, generation);
+    }
+
+    private async Task LoadSignalScene(string scene, string path, int generation)
+    {
+        // Await on the UI context directly. A ThreadPool ContinueWith between decode and
+        // dispatcher delivery can leave headless captures one destination behind.
+        var bmp = await ImageCache.LoadAsync(path, 1920);
+        void Apply()
+        {
+            if (generation != _signalGeneration || T.Def.Backdrop != BackdropStyle.Signal || bmp is null) return;
+            var (back, backFade, front, frontFade) = _signalAFront
+                ? (_signalB, _signalFadeB, _signalA, _signalFadeA)
+                : (_signalA, _signalFadeA, _signalB, _signalFadeB);
+            back.Background = new ImageBrush(bmp) { Stretch = Stretch.UniformToFill };
+            back.ZIndex = 1;
+            front.ZIndex = 0;
+            var snap = !Motion.Enabled || L.Settings is not null && L.Settings.Bool(Lounge.Core.Settings.K.ReduceEffects);
+            if (snap) { backFade.Snap(1); frontFade.Snap(0); }
+            else { backFade.To(1); frontFade.To(0); }
+            _signalAFront = !_signalAFront;
+            _signalDisplayedScene = scene;
+        }
+        if (Dispatcher.UIThread.CheckAccess()) Apply();
+        else await Dispatcher.UIThread.InvokeAsync(Apply);
     }
 
     /// <summary>Liquid: warm light pooling top right, cool light low left and a little teal

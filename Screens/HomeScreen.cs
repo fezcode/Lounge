@@ -16,7 +16,7 @@ namespace Lounge.Screens;
 /// <summary>The home screen. The same content (destinations, jump back in, videos,
 /// music, apps, web) is laid out differently by each theme, which is what makes the
 /// themes feel like different devices rather than different colours.</summary>
-public sealed class HomeScreen : Screen
+public sealed partial class HomeScreen : Screen
 {
     private readonly Dictionary<FocusItem, HomeEntry> _entries = new();
     private TextBlock? _heroTitle, _heroSubtitle;
@@ -100,6 +100,7 @@ public sealed class HomeScreen : Screen
             HomeLayout.Hall => Hall(),
             HomeLayout.Floating => Floating(),
             HomeLayout.Terminal => Terminal(),
+            HomeLayout.Signal => Signal(),
             _ => Aurora(),
         };
         _building = false;
@@ -199,6 +200,7 @@ public sealed class HomeScreen : Screen
         // Saga shows the picture in its own place, on the right.
         if (T.Def.Layout == HomeLayout.Hall) { L.Window.Backdrop.SetArt(null); ShowSagaItem(e); return; }
         if (T.Def.Layout == HomeLayout.Terminal) { L.Window.Backdrop.SetArt(null); ShowTerminalItem(e); return; }
+        if (T.Def.Layout == HomeLayout.Signal) { L.Window.Backdrop.SetArt(null); return; }
         var art = e.Tile is null ? e.Backdrop ?? e.Art ?? e.Video?.Art : null;
         // Apple TV-like layouts show the art sharp and full; the rest blur it into a wash.
         var full = T.Def.Layout is HomeLayout.TopTabsHero or HomeLayout.Sidebar;

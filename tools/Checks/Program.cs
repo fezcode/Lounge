@@ -75,6 +75,7 @@ Check("Menu opens settings; the theme changes from the controller", ChangeTheme)
             Check("Each stick direction maps on its own", StickDirections);
             Check("Holding A picks a home tile up and the D-pad moves it", MoveTile);
             Check("Every theme renders its own home", ThemesDiffer);
+            Check("Signal's destinations change the scene and keep controller focus", SignalHome);
 Check("Screening Room's home animates without errors as focus moves", ScreeningHome);
         Check("Arcade's menu lights one arrow, on the chosen entry", ArcadeHome);
         Check("Tile logos stay on their tiles every time a screen is built", TileLogosSurviveRebuilds);
@@ -141,10 +142,20 @@ Check("On the Web screen, X opens a site's options", WebOptionsWithX);
     {
         for (int i = 0; i < rounds; i++)
         {
-            Dispatcher.UIThread.RunJobs();
+            // Use the headless platform's controlled loop so each pump has an exit
+            // request even while the player continually schedules animation frames.
+            using var slice = new CancellationTokenSource(TimeSpan.FromMilliseconds(10));
+            Dispatcher.UIThread.MainLoop(slice.Token);
             AvaloniaHeadlessPlatform.ForceRenderTimerTick();
             Thread.Sleep(10);
         }
+    }
+
+    private static bool WaitFor(Func<bool> ready, int timeoutMs = 8000)
+    {
+        var deadline = DateTime.Now.AddMilliseconds(timeoutMs);
+        while (!ready() && DateTime.Now < deadline) Pump(5);
+        return ready();
     }
 
     /// <summary>The virtual pad: one snapshot into the real router.</summary>
@@ -205,6 +216,107 @@ Check("On the Web screen, X opens a site's options", WebOptionsWithX);
         Pump(30);
         Assert(!_w.Overlays.OfType<ModalLayer>().Any(), "B did not close the Power menu");
         L.Settings.Set(K.ConfirmExit, true);
+    }
+
+    private static void SignalHome()
+    {
+        var homeSections = new[] { K.ShowJumpBackIn, K.ShowVideos, K.ShowMusic, K.ShowApps, K.ShowWeb };
+        var previousSections = homeSections.ToDictionary(k => k, k => L.Settings.Bool(k));
+        var musicOnLeave = L.Settings.String(K.MusicOnLeave);
+        void ChooseTab(string title)
+        {
+            Press(PadButton.DPadUp);
+            var titles = HomeModel.Menu().Select(e => e.Title).ToList();
+            var current = titles.IndexOf(FocusedTag ?? "");
+            var target = titles.IndexOf(title);
+            Assert(current >= 0 && target >= 0, $"Signal's destination tabs could not be located (focused {FocusedTag}, wanted {title})");
+            for (var i = 0; i < Math.Abs(target - current); i++) Press(target > current ? PadButton.DPadRight : PadButton.DPadLeft);
+            Assert(FocusedTag == title, $"Signal could not reach the {title} destination (focused {FocusedTag})");
+        }
+        void Scene(string name) => Assert(WaitFor(() => _w.Backdrop.SignalScene == name && _w.Backdrop.SignalSceneReady),
+            $"Signal did not display {name} (selected {_w.Backdrop.SignalScene}, ready {_w.Backdrop.SignalSceneReady})");
+        try
+        {
+            foreach (var key in homeSections) L.Settings.Set(key, true);
+            L.Settings.Set(K.Theme, "signal");
+            _w.ApplyTheme(rebuild: true);
+            _w.GoHome();
+            Pump(20);
+            Assert(_w.Top is HomeScreen, "Signal did not open Home");
+            ChooseTab("Videos");
+            Scene("signal-bloom");
+            Press(PadButton.DPadRight);
+            Assert(FocusedTag == "Music", "right from Videos did not select Music");
+            Scene("night-frequency");
+            Press(PadButton.DPadRight);
+            Assert(FocusedTag == "Apps & Games", "right from Music did not select Apps & Games");
+            Scene("chromatic-drift");
+
+            Press(PadButton.DPadDown);
+            var first = _w.Top!.Focused;
+            Assert(first?.Tag is HomeEntry { Tile: not null }, "down from Apps & Games did not enter its shelf");
+            Press(PadButton.DPadRight);
+            Assert(_w.Top.Focused != first, "right did not browse Signal's app shelf");
+            Press(PadButton.DPadLeft);
+            Assert(_w.Top.Focused == first, "left did not return to the first app");
+            Press(PadButton.DPadUp);
+            Assert(FocusedTag == "Apps & Games", "up did not return to the selected destination");
+            Press(PadButton.A);
+            Assert(_w.Top is AppsScreen, "A on Apps & Games did not open the app collection");
+            Press(PadButton.B);
+            Pump(15);
+            Assert(_w.Top is HomeScreen && FocusedTag == "Apps & Games", "returning from Apps lost Signal's destination");
+            foreach (var title in new[] { "Web", "Files", "Settings", "Power" })
+            {
+                ChooseTab(title);
+                Scene("magenta-horizon");
+            }
+
+            // Hiding all shelves must leave useful destinations and a valid focus target.
+            foreach (var key in homeSections) L.Settings.Set(key, false);
+            ((HomeScreen)_w.Top!).Rebuild();
+            Pump(15);
+            ChooseTab("Apps & Games");
+            Press(PadButton.DPadDown);
+            Assert(_w.Top!.Focused is not null, "Signal's empty shelf lost focus");
+            Assert(!_w.Top.GetVisualDescendants().OfType<Card>().Any(c => c.IsEffectivelyVisible && c.Item.Tag is HomeEntry { Tile: not null }), "Signal left app tiles visible with all shelves hidden");
+            ChooseTab("Videos");
+            Press(PadButton.A);
+            Assert(_w.Top is VideosScreen, "an empty Signal shelf made the Videos destination unusable");
+            Press(PadButton.B);
+            Pump(10);
+            Assert(_w.Top is HomeScreen && FocusedTag == "Videos", "returning from Videos lost Signal's destination");
+
+            foreach (var (key, value) in previousSections) L.Settings.Set(key, value);
+            var song = Path.Combine(Path.GetTempPath(), "lounge-clips-v2", "song.mp3");
+            Assert(File.Exists(song), "test song missing; run the unit tests first");
+            L.Settings.Set(K.MusicOnLeave, "keep");
+            Playback.Open(song, [song], 0);
+            var deadline = DateTime.Now.AddSeconds(8);
+            while (!L.Player.IsPlaying && DateTime.Now < deadline) Pump(5);
+            Assert(L.Player.IsPlaying, "the Signal check's music did not start");
+            // The fixture is only three seconds long; keep it open while routing back to it.
+            L.Player.Pause();
+            Assert(L.Player.State == PlayerState.Paused, "the Signal check's music did not pause");
+            Press(PadButton.B);
+            _w.GoHome();
+            Pump(15);
+            ChooseTab("Now Playing");
+            Scene("night-frequency");
+            Press(PadButton.A);
+            Assert(_w.Top is NowPlayingScreen, "Signal's Now Playing destination did not return to the music");
+            Press(PadButton.B);
+        }
+        finally
+        {
+            L.Player.Close();
+            L.Settings.Set(K.MusicOnLeave, musicOnLeave);
+            foreach (var (key, value) in previousSections) L.Settings.Set(key, value);
+            L.Settings.Set(K.Theme, "aurora");
+            _w.ApplyTheme(rebuild: true);
+            _w.GoHome();
+            Pump(10);
+        }
     }
 
     private static void ScreeningHome()
@@ -394,6 +506,8 @@ Check("On the Web screen, X opens a site's options", WebOptionsWithX);
         File.WriteAllText(Path.Combine(dir, "song.mp3"), "x");
         var files = new FilesScreen(dir);
         _w.Push(files);
+        bool FocusIs(string text) => files.Focused?.View is Control focused &&
+            focused.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == text);
         Pump();
         Press(PadButton.DPadRight);                // song.mp3
         Press(PadButton.View);                     // options
@@ -411,15 +525,19 @@ Check("On the Web screen, X opens a site's options", WebOptionsWithX);
         Pump(10);
         Assert(_w.Overlays.OfType<OnScreenKeyboard>().Any(), "New folder did not ask for a name");
         Press(PadButton.Menu);                     // accept "New folder"
-        Pump(20);
         var made = Path.Combine(dir, "New folder");
-        Assert(Directory.Exists(made), "the new folder was not created");
+        Assert(WaitFor(() => Directory.Exists(made) && FocusIs("New folder")), "the new folder was not created and focused");
         // Open it and paste: the first list entry is "Paste 1 item here".
         Press(PadButton.A);
-        Pump(6);
+        Assert(WaitFor(() => files.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == made) && FocusIs("Paste 1 item here")),
+            "the new folder did not open with Paste focused");
         Press(PadButton.A);
-        Pump(40);
-        Assert(File.Exists(Path.Combine(made, "song.mp3")), "paste did not copy the file");
+        bool Copied()
+        {
+            try { return File.ReadAllText(Path.Combine(made, "song.mp3")) == "x"; }
+            catch (IOException) { return false; }   // the asynchronous transfer may still own the file
+        }
+        Assert(WaitFor(Copied), "paste did not copy the file and its contents");
         Assert(File.Exists(Path.Combine(dir, "song.mp3")), "copy removed the original");
     }
 

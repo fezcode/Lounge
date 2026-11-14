@@ -1,0 +1,22 @@
+Lounge Signal artwork
+
+These four PNGs were supplied by the user on 2026-11-14 for Lounge's
+project page in Fezcodex. They are copied byte for byte from:
+D:/Workhammer/fezcodex/public/images/projects/lounge/backgrounds/originals/
+
+Source page: src/pages/project-pages/LoungeProjectPage.jsx
+Source design: src/styles/project-showcases/LoungeShowcase.css
+Provenance manifest: public/images/projects/lounge/backgrounds/ASSETS.md
+
+No external source or license has been inferred. No crop, filter, retouching,
+or other image alteration was applied. Lounge scales the images for display.
+
+SHA-256:
+signal-bloom.png
+0419782075313211f646e82449e691d6f6d29e3e84ae7734ea4a69c82ea4779c
+night-frequency.png
+d944e176fcf07ac629749d338f2e8c2308ef347bd46d3e38ff3e32c4c8f51524
+chromatic-drift.png
+76f6c5d770f54ce3a180608e640db2d562138e6a0bf0d9b789d13395199e4e90
+magenta-horizon.png
+e41e49d335db47e87f98f0b1557086f9234817cef691d49286ade8c445286567

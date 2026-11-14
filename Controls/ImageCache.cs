@@ -96,11 +96,17 @@ public static class ImageCache
     {
         try
         {
+            // Bundled theme artwork shares the same bounded decode queue as library art.
+            if (path.StartsWith("avares://", StringComparison.OrdinalIgnoreCase))
+            {
+                using var asset = AssetLoader.Open(new Uri(path));
+                return Bitmap.DecodeToWidth(asset, decodeWidth, BitmapInterpolationMode.MediumQuality);
+            }
             if (!File.Exists(path)) return null;
             using var s = File.OpenRead(path);
             return Bitmap.DecodeToWidth(s, decodeWidth, BitmapInterpolationMode.MediumQuality);
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException or NotSupportedException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or UriFormatException or InvalidOperationException or NotSupportedException)
         {
             return null;
         }
