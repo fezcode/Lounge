@@ -78,6 +78,15 @@ public sealed unsafe class MediaPlayer : IDisposable
     public string? LastError { get; private set; }
     public SubtitleEngine Subtitles { get; } = new();
 
+    /// <summary>Running counters for the info panel and self-checks: frames decoded, frames
+    /// shown, frames dropped because they were late, and the average milliseconds spent
+    /// turning one decoded frame into something the screen can draw.</summary>
+    public (long Decoded, long Shown, long Dropped, double ConvertMs, string? Format, double TransferMs) Stats =>
+        (_statDecoded, _statShown, _statDropped, _statDecoded > 0 ? _statConvertTicks * 1000.0 / Stopwatch.Frequency / _statDecoded : 0, _statFormat,
+         _statDecoded > 0 && _converter is not null ? _converter.TransferTicks * 1000.0 / Stopwatch.Frequency / _statDecoded : 0);
+    private long _statDecoded, _statShown, _statDropped, _statConvertTicks;
+    private string? _statFormat;
+
     public event Action<PlayerState>? StateChanged;
     public event Action? TracksChanged;
 
@@ -294,6 +303,8 @@ public sealed unsafe class MediaPlayer : IDisposable
         VideoStream = AudioStream = SubtitleStream = -1;
         Tracks = [];
         Chapters = [];
+        _statDecoded = _statShown = _statDropped = _statConvertTicks = 0;
+        _statFormat = null;
         Duration = 0;
         Speed = 1;
         _playing = false;
@@ -486,11 +497,14 @@ public sealed unsafe class MediaPlayer : IDisposable
     public void SelectSubtitle(int streamIndex)
     {
         if (_path is null) return;
+        ReadSubtitleStream(-1);
         SubtitleStream = -1;
         if (streamIndex < 0) { Subtitles.Clear(); TracksChanged?.Invoke(); return; }
         var t = Tracks.FirstOrDefault(x => x.StreamIndex == streamIndex && x.Kind == TrackKind.Subtitle);
         if (t is null) return;
         byte[]? header = null;
+        AVCodecParameters* live = null;
+        AVRational tb = default;
         if (_fmt != null)
         {
             var par = _fmt->streams[streamIndex]->codecpar;
@@ -499,14 +513,34 @@ public sealed unsafe class MediaPlayer : IDisposable
                 header = new byte[par->extradata_size];
                 new ReadOnlySpan<byte>(par->extradata, par->extradata_size).CopyTo(header);
             }
+            live = par;
+            tb = _fmt->streams[streamIndex]->time_base;
         }
-        Subtitles.BeginEmbedded(_path, streamIndex, t.Codec, t.IsBitmap, header);
+        long size;
+        try { size = new FileInfo(_path).Length; } catch (Exception) { size = 0; }
+        Subtitles.BeginEmbedded(_path, streamIndex, t.Codec, t.IsBitmap, header, live, tb,
+            preload: size > 0 && size <= SubtitleEngine.PreloadLimitBytes);
+        if (live != null) ReadSubtitleStream(streamIndex);
         SubtitleStream = streamIndex;
         TracksChanged?.Invoke();
     }
 
+    /// <summary>Lets the demuxer deliver one subtitle stream's packets (and stops the one it
+    /// delivered before); -1 stops them all.</summary>
+    private void ReadSubtitleStream(int streamIndex)
+    {
+        if (_fmt == null) return;
+        for (int i = 0; i < _fmt->nb_streams; i++)
+        {
+            if (i == VideoStream || i == AudioStream) continue;
+            if (_fmt->streams[i]->codecpar->codec_type != AVMediaType.AVMEDIA_TYPE_SUBTITLE) continue;
+            _fmt->streams[i]->discard = i == streamIndex ? AVDiscard.AVDISCARD_DEFAULT : AVDiscard.AVDISCARD_ALL;
+        }
+    }
+
     public bool LoadSubtitleFile(string path)
     {
+        ReadSubtitleStream(-1);
         var ok = Subtitles.LoadFile(path);
         if (ok) SubtitleStream = -2;   // external
         TracksChanged?.Invoke();
@@ -540,6 +574,7 @@ public sealed unsafe class MediaPlayer : IDisposable
                 if (!_playing) return null;
                 while (_frames.Count > 0 && _frames[0].Pts <= clock + 0.004)
                 {
+                    if (pick is not null) _statDropped++;
                     pick?.Dispose();
                     pick = _frames[0];
                     _frames.RemoveAt(0);
@@ -547,6 +582,7 @@ public sealed unsafe class MediaPlayer : IDisposable
                 if (pick is not null && _seekPending) { _seekPending = false; AfterSeekSettled(); }
             }
             Monitor.PulseAll(_frames);
+            if (pick is not null) _statShown++;
             return pick;
         }
     }
@@ -598,6 +634,7 @@ public sealed unsafe class MediaPlayer : IDisposable
                     ffmpeg.av_seek_frame(_fmt, -1, ts, ffmpeg.AVSEEK_FLAG_BACKWARD);
                     _demuxSerial = s.Serial;
                     _demuxEof = false;
+                    Subtitles.FlushLive();
                     if (VideoStream >= 0) _vq.Put(new QueueItem(QueueItemKind.Flush, IntPtr.Zero, s.Serial));
                     if (HasAudio) _aq.Put(new QueueItem(QueueItemKind.Flush, IntPtr.Zero, s.Serial));
                 }
@@ -624,7 +661,13 @@ public sealed unsafe class MediaPlayer : IDisposable
                     else if (HasAudio) _aq.Put(item);
                     else PacketQueue.Free(item);
                 }
-                else ffmpeg.av_packet_unref(pkt);
+                else
+                {
+                    // The chosen embedded subtitle track is decoded from the same read, so
+                    // subtitles never need a second pass over the file.
+                    if (pkt->stream_index == Subtitles.LiveStream) Subtitles.Feed(pkt);
+                    ffmpeg.av_packet_unref(pkt);
+                }
             }
         }
         finally { ffmpeg.av_packet_free(&pkt); }
@@ -670,7 +713,11 @@ public sealed unsafe class MediaPlayer : IDisposable
             var pts = ts == ffmpeg.AV_NOPTS_VALUE ? 0 : Ff.ToSeconds(ts, tb);
             var frameDur = frame->duration > 0 ? Ff.ToSeconds(frame->duration, tb) : 1 / 30.0;
             if (pts + frameDur * 0.5 < _exactTarget) { ffmpeg.av_frame_unref(frame); continue; }
+            var t0 = Stopwatch.GetTimestamp();
             var vf = _converter!.Convert(frame);
+            _statConvertTicks += Stopwatch.GetTimestamp() - t0;
+            _statDecoded++;
+            _statFormat ??= _converter.SourceFormat;
             ffmpeg.av_frame_unref(frame);
             if (vf is null) continue;
             vf.Pts = pts;

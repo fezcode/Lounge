@@ -68,6 +68,10 @@ public sealed class CpuVideoSurface : Image, IVideoSurface
 
 /// <summary>The GPU path. Planes are uploaded as single/dual-channel textures (NV12: Y +
 /// interleaved UV; yuv420p: Y, U, V) and a fragment shader converts to RGB with the
+/// BT.709 matrix for HD and BT.601 for SD. The textures are R8/RG8 where the context has
+/// them (ES 3 or GL_EXT_texture_rg): ANGLE emulates LUMINANCE textures as RGBA, expanding
+/// every byte to four on the CPU, which made uploading one 4K frame take ~9 ms on the
+/// render thread. LUMINANCE remains the fallback. The shader converts
 /// BT.709 matrix for HD and BT.601 for SD, expanding limited range, then applies the
 /// picture adjustments.</summary>
 public sealed unsafe class GlVideoSurface : OpenGlControlBase, IVideoSurface
@@ -81,7 +85,10 @@ public sealed unsafe class GlVideoSurface : OpenGlControlBase, IVideoSurface
     private FramePixels _texFmt;
     private bool _hasFrame;
     private double _aspect = 16.0 / 9;
-    private int _uScale, _uY, _uU, _uV, _uMode, _uBright, _uContrast, _uSat, _uHue, _uGamma, _uBt709, _uRange;
+    private int _uScale, _uY, _uU, _uV, _uMode, _uBright, _uContrast, _uSat, _uHue, _uGamma, _uBt709, _uRange, _uRg;
+    private bool _rg;
+    /// <summary>Diagnostics: whether planes go up as native R8/RG8 textures.</summary>
+    public bool NativeTextures => _rg;
     private int _aPos;
 
     public Control View => this;
@@ -90,6 +97,13 @@ public sealed unsafe class GlVideoSurface : OpenGlControlBase, IVideoSurface
     public string? Error { get; private set; }
     public PictureAdjust Adjust { get; set; } = PictureAdjust.Neutral;
     public int FramesDrawn { get; private set; }
+    /// <summary>Diagnostics: average milliseconds uploading a frame, frames uploaded, and the
+    /// longest gap between two uploads while frames kept coming.</summary>
+    public double UploadMs => _uploads > 0 ? _uploadTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / _uploads : 0;
+    public int Uploads => _uploads;
+    public double LongestGapMs { get; private set; }
+    private long _uploadTicks, _lastUpload;
+    private int _uploads;
 
     /// <summary>Self-check: the next rendered frame is read back as RGBA (bottom-up).</summary>
     public Action<byte[], int, int>? CaptureNext { get; set; }
@@ -128,6 +142,7 @@ public sealed unsafe class GlVideoSurface : OpenGlControlBase, IVideoSurface
         uniform sampler2D texU;
         uniform sampler2D texV;
         uniform float mode;      // 0 nv12, 1 yuv420p
+        uniform float rg;        // 1: the UV plane is RG8 (V in g), 0: LUMINANCE_ALPHA (V in a)
         uniform float bt709;
         uniform float fullRange;
         uniform float brightness;
@@ -138,7 +153,7 @@ public sealed unsafe class GlVideoSurface : OpenGlControlBase, IVideoSurface
         void main() {
             float y = texture2D(texY, vUv).r;
             vec2 uv;
-            if (mode < 0.5) { vec4 c = texture2D(texU, vUv); uv = vec2(c.r, c.a); }
+            if (mode < 0.5) { vec4 c = texture2D(texU, vUv); uv = vec2(c.r, rg > 0.5 ? c.g : c.a); }
             else uv = vec2(texture2D(texU, vUv).r, texture2D(texV, vUv).r);
             if (fullRange < 0.5) { y = (y - 0.0627451) * 1.1643836; uv = (uv - 0.5) * 1.1383929; }
             else uv = uv - 0.5;
@@ -178,6 +193,10 @@ public sealed unsafe class GlVideoSurface : OpenGlControlBase, IVideoSurface
             _uScale = Uniform("scale"); _uY = Uniform("texY"); _uU = Uniform("texU"); _uV = Uniform("texV"); _uMode = Uniform("mode");
             _uBright = Uniform("brightness"); _uContrast = Uniform("contrast"); _uSat = Uniform("saturation");
             _uHue = Uniform("hue"); _uGamma = Uniform("gamma"); _uBt709 = Uniform("bt709"); _uRange = Uniform("fullRange");
+            _uRg = Uniform("rg");
+            var version = g.GetString(Gl.VERSION) ?? "";
+            var extensions = g.GetString(Gl.EXTENSIONS) ?? "";
+            _rg = version.Contains("OpenGL ES 3", StringComparison.Ordinal) || extensions.Contains("GL_EXT_texture_rg", StringComparison.Ordinal);
 
             int vbo;
             g.GenBuffers(1, &vbo);
@@ -234,8 +253,13 @@ public sealed unsafe class GlVideoSurface : OpenGlControlBase, IVideoSurface
         lock (_gate) { frame = _pending; _pending = null; }
         if (frame is not null)
         {
+            var t0 = System.Diagnostics.Stopwatch.GetTimestamp();
             try { Upload(g, frame); }
             finally { frame.Dispose(); }
+            var t1 = System.Diagnostics.Stopwatch.GetTimestamp();
+            _uploadTicks += t1 - t0;
+            if (_uploads++ > 10 && _lastUpload > 0) LongestGapMs = Math.Max(LongestGapMs, (t0 - _lastUpload) * 1000.0 / System.Diagnostics.Stopwatch.Frequency);
+            _lastUpload = t0;
         }
 
         var scaling = VisualRoot?.RenderScaling ?? 1;
@@ -265,6 +289,7 @@ public sealed unsafe class GlVideoSurface : OpenGlControlBase, IVideoSurface
         g.Uniform2f(_uScale, sx, sy);
         g.Uniform1i(_uY, 0); g.Uniform1i(_uU, 1); g.Uniform1i(_uV, 2);
         g.Uniform1f(_uMode, _texFmt == FramePixels.Nv12 ? 0 : 1);
+        g.Uniform1f(_uRg, _rg ? 1 : 0);
         g.Uniform1f(_uBt709, _texH >= 720 ? 1 : 0);
         g.Uniform1f(_uRange, 0);
         var a = Adjust;
@@ -293,19 +318,22 @@ public sealed unsafe class GlVideoSurface : OpenGlControlBase, IVideoSurface
         _aspect = f.DisplayAspect;
         g.PixelStorei(Gl.UNPACK_ALIGNMENT, 1);
         int cw = (f.Width + 1) / 2, ch = (f.Height + 1) / 2;
-        Plane(g, 0, Gl.LUMINANCE, f.Width, f.Height, f.Planes[0], realloc);
+        var one = _rg ? (Gl.R8, Gl.RED) : (Gl.LUMINANCE, Gl.LUMINANCE);
+        var two = _rg ? (Gl.RG8, Gl.RG) : (Gl.LUMINANCE_ALPHA, Gl.LUMINANCE_ALPHA);
+        Plane(g, 0, one, f.Width, f.Height, f.Planes[0], realloc);
         if (f.Pixels == FramePixels.Nv12)
-            Plane(g, 1, Gl.LUMINANCE_ALPHA, f.Strides[1] / 2, ch, f.Planes[1], realloc);
+            Plane(g, 1, two, f.Strides[1] / 2, ch, f.Planes[1], realloc);
         else
         {
-            Plane(g, 1, Gl.LUMINANCE, cw, ch, f.Planes[1], realloc);
-            Plane(g, 2, Gl.LUMINANCE, cw, ch, f.Planes[2], realloc);
+            Plane(g, 1, one, cw, ch, f.Planes[1], realloc);
+            Plane(g, 2, one, cw, ch, f.Planes[2], realloc);
         }
         _hasFrame = true;
     }
 
-    private void Plane(Gl g, int index, int format, int w, int h, byte[] data, bool realloc)
+    private void Plane(Gl g, int index, (int Internal, int Format) fmt, int w, int h, byte[] data, bool realloc)
     {
+        var (internalFormat, format) = fmt;
         g.BindTexture(Gl.TEXTURE_2D, _tex[index]);
         fixed (byte* p = data)
         {
@@ -315,7 +343,7 @@ public sealed unsafe class GlVideoSurface : OpenGlControlBase, IVideoSurface
                 g.TexParameteri(Gl.TEXTURE_2D, Gl.TEXTURE_MAG_FILTER, Gl.LINEAR);
                 g.TexParameteri(Gl.TEXTURE_2D, Gl.TEXTURE_WRAP_S, Gl.CLAMP_TO_EDGE);
                 g.TexParameteri(Gl.TEXTURE_2D, Gl.TEXTURE_WRAP_T, Gl.CLAMP_TO_EDGE);
-                g.TexImage2D(Gl.TEXTURE_2D, 0, format, w, h, 0, format, Gl.UNSIGNED_BYTE, (IntPtr)p);
+                g.TexImage2D(Gl.TEXTURE_2D, 0, internalFormat, w, h, 0, format, Gl.UNSIGNED_BYTE, (IntPtr)p);
             }
             else g.TexSubImage2D(Gl.TEXTURE_2D, 0, 0, 0, w, h, format, Gl.UNSIGNED_BYTE, (IntPtr)p);
         }
@@ -331,6 +359,7 @@ public sealed unsafe class GlVideoSurface : OpenGlControlBase, IVideoSurface
         public const int TEXTURE_WRAP_S = 0x2802, TEXTURE_WRAP_T = 0x2803, CLAMP_TO_EDGE = 0x812F, LINEAR = 0x2601;
         public const int LUMINANCE = 0x1909, LUMINANCE_ALPHA = 0x190A, UNSIGNED_BYTE = 0x1401, UNPACK_ALIGNMENT = 0x0CF5;
         public const int FRAMEBUFFER = 0x8D40, COLOR_BUFFER_BIT = 0x4000, RGBA = 0x1908;
+        public const int R8 = 0x8229, RG8 = 0x822B, RED = 0x1903, RG = 0x8227, VERSION = 0x1F02, EXTENSIONS = 0x1F03;
 
         private readonly delegate* unmanaged[Stdcall]<int, int> _createShader;
         private readonly delegate* unmanaged[Stdcall]<int, int, IntPtr*, int*, void> _shaderSource;
@@ -368,6 +397,7 @@ public sealed unsafe class GlVideoSurface : OpenGlControlBase, IVideoSurface
         private readonly delegate* unmanaged[Stdcall]<int, void> _clear;
         private readonly delegate* unmanaged[Stdcall]<int, int, void> _bindFramebuffer;
         private readonly delegate* unmanaged[Stdcall]<int, int, int, int, int, int, IntPtr, void> _readPixels;
+        private readonly delegate* unmanaged[Stdcall]<int, byte*> _getString;
 
         public Gl(GlInterface gl)
         {
@@ -413,6 +443,7 @@ public sealed unsafe class GlVideoSurface : OpenGlControlBase, IVideoSurface
             _clear = (delegate* unmanaged[Stdcall]<int, void>)P("glClear");
             _bindFramebuffer = (delegate* unmanaged[Stdcall]<int, int, void>)P("glBindFramebuffer");
             _readPixels = (delegate* unmanaged[Stdcall]<int, int, int, int, int, int, IntPtr, void>)P("glReadPixels");
+            _getString = (delegate* unmanaged[Stdcall]<int, byte*>)P("glGetString");
         }
 
         public int CreateShader(int t) => _createShader(t);
@@ -451,5 +482,6 @@ public sealed unsafe class GlVideoSurface : OpenGlControlBase, IVideoSurface
         public void Clear(int mask) => _clear(mask);
         public void BindFramebuffer(int t, int fb) => _bindFramebuffer(t, fb);
         public void ReadPixels(int x, int y, int w, int h, int fmt, int type, IntPtr data) => _readPixels(x, y, w, h, fmt, type, data);
+        public string? GetString(int name) { var p = _getString(name); return p == null ? null : Marshal.PtrToStringAnsi((IntPtr)p); }
     }
 }

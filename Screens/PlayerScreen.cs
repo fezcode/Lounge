@@ -326,12 +326,17 @@ public sealed class PlayerScreen : Screen
             top.RequestAnimationFrame(_ => tcs.TrySetResult());
             await tcs.Task;
             if (!_alive) break;
+            var t0 = System.Diagnostics.Stopwatch.GetTimestamp();
             try { Frame(); }
             catch (Exception e)
             {
                 // One bad frame must not stop playback; note it once for self-checks.
                 if (SelfCheck.Active) SelfCheck.Report("player-error", new { error = e.ToString() });
             }
+            var spent = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
+            _uiFrameTicks += spent;
+            if (_uiFrames > 30) _uiFrameMax = Math.Max(_uiFrameMax, spent);
+            _uiFrames++;
         }
     }
 
@@ -368,7 +373,11 @@ public sealed class PlayerScreen : Screen
         _scrubHead.Margin = new Thickness(width * frac - 11, 0, 0, 0);
         _scrubHead.Opacity = _seekMode == SeekMode.Scrub ? 1 : 0;
 
+        var s0 = System.Diagnostics.Stopwatch.GetTimestamp();
         RenderSubtitles(pos);
+        var subsSpent = System.Diagnostics.Stopwatch.GetTimestamp() - s0;
+        _subsTicks += subsSpent;
+        if (_uiFrames > 30) _subsMax = Math.Max(_subsMax, subsSpent);
 
         // Next up, as on a streaming service.
         var nextUpAt = L.Settings.Int(K.NextUpSeconds);
@@ -387,10 +396,12 @@ public sealed class PlayerScreen : Screen
             _osdSpring.To(0);
         _pauseSpring.To(!p.IsPlaying && p.State == PlayerState.Paused && _seekMode == SeekMode.None && _framesSeen ? 1 : 0);
         if (_info.IsVisible) UpdateInfo();
-        if (SelfCheck.Active && !_checkDone && _framesSeen && p.IsPlaying && p.Position > 2.0) RunSelfCheck();
+        if (SelfCheck.Active && !_checkDone && _framesSeen && p.IsPlaying && p.Position > SelfCheckSeconds) RunSelfCheck();
     }
 
     private bool _checkDone;
+    private long _uiFrameTicks, _uiFrames, _subsTicks, _uiFrameMax, _subsMax;
+    private static readonly double SelfCheckSeconds = double.TryParse(Environment.GetEnvironmentVariable("LOUNGE_SELFCHECK_SECONDS"), System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : 2.0;
 
     /// <summary>LOUNGE_SELFCHECK: capture what the video surface really drew, report, exit.</summary>
     private void RunSelfCheck()
@@ -403,6 +414,15 @@ public sealed class PlayerScreen : Screen
             {
                 renderer, frames, position = p.Position, hw = p.HardwareDecoder, width = p.VideoWidth, height = p.VideoHeight,
                 subtitles = p.Subtitles.HasTrack, subtitlesVisible = _subs.IsVisible, state = p.State.ToString(),
+                decoded = p.Stats.Decoded, shown = p.Stats.Shown, dropped = p.Stats.Dropped, convertMs = p.Stats.ConvertMs,
+                format = p.Stats.Format, subsPreload = p.Subtitles.PreloadSeconds,
+                uploadMs = (_surface as GlVideoSurface)?.UploadMs, uploads = (_surface as GlVideoSurface)?.Uploads,
+                longestGapMs = (_surface as GlVideoSurface)?.LongestGapMs, transferMs = p.Stats.TransferMs,
+                nativeTextures = (_surface as GlVideoSurface)?.NativeTextures,
+                uiFrameMaxMs = _uiFrameMax * 1000.0 / System.Diagnostics.Stopwatch.Frequency,
+                subsMaxMs = _subsMax * 1000.0 / System.Diagnostics.Stopwatch.Frequency,
+                gen2 = GC.CollectionCount(2), gen0 = GC.CollectionCount(0), uiFrameMs = _uiFrameTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / Math.Max(1, _uiFrames),
+                subsMs = _subsTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / Math.Max(1, _uiFrames),
             });
             DispatcherTimer.RunOnce(() => L.Window.Exit(), TimeSpan.FromMilliseconds(300));
         }

@@ -9,9 +9,12 @@ public sealed record SubStyle(string Font, double Scale, uint Color, uint Outlin
 
 /// <summary>Subtitles, as in tivi: text tracks (ASS/SSA, and SRT/VTT/... converted by
 /// FFmpeg) render through libass; bitmap tracks (PGS, VobSub, DVB) come straight from
-/// FFmpeg's decoder. An embedded track is preloaded in the background so seeking shows
-/// subtitles at once. Plain-text tracks take the user's font and colours through a
-/// generated ASS header; authored ASS keeps its own styling.</summary>
+/// FFmpeg's decoder. An embedded track is decoded from the packets the player is already
+/// reading (<see cref="Feed"/>), so lines appear as playback reaches them with no extra
+/// disk reads; a small file is also preloaded in the background so seeking shows subtitles
+/// at once. Both sources can deliver the same line, so events are de-duplicated. Plain-text
+/// tracks take the user's font and colours through a generated ASS header; authored ASS
+/// keeps its own styling.</summary>
 public sealed unsafe class SubtitleEngine : IDisposable
 {
     private sealed record BitmapSub(double Start, double End, int X, int Y, int W, int H, byte[] Bgra, int RefW, int RefH);
@@ -22,13 +25,34 @@ public sealed unsafe class SubtitleEngine : IDisposable
     private bool _bitmapMode;
     private int _frameW, _frameH, _videoW = 1280, _videoH = 720;
     private byte[]? _overlay;
-    private bool _hadContent;
+    private bool _hadContent, _overlayFresh;
+    private List<BitmapSub> _lastActive = [];
     private CancellationTokenSource? _preload;
     private SubStyle _style = new("sans-serif", 1, 0xFFFFFF, 0, 2, 0);
     private bool _plainText;
     private byte[]? _codecHeader;
     private readonly LibAss.MessageCallback _quiet = (_, _, _, _) => { };
     private long _generation;
+
+    // The live decoder fed by the player's demuxer; guarded by _liveGate because the demux
+    // thread decodes while the UI thread may switch tracks.
+    private readonly object _liveGate = new();
+    private AVCodecContext* _liveCtx;
+    private int _liveStream = -1;
+    private AVRational _liveTb;
+    private bool _liveBitmap;
+    private int _liveRefW, _liveRefH;
+    // Lines already given to libass (start, text without its ReadOrder) and bitmaps already
+    // kept (start, rectangle), so the live feed and the preload never show a line twice.
+    private readonly HashSet<(long, string)> _seenText = new();
+    private readonly HashSet<(long, int, int, int, int)> _seenBitmaps = new();
+    private int _readOrder;
+
+    /// <summary>Files up to this size are also preloaded in full in the background. Larger
+    /// ones (4K films) rely on the live feed alone: reading a 10 GB file twice at once made a
+    /// hard drive seek back and forth, starving playback, and a text track only appeared
+    /// when that second pass reached the end of the file, minutes in.</summary>
+    public static long PreloadLimitBytes { get; set; } = 2L * 1024 * 1024 * 1024;
 
     public bool HasTrack { get { lock (_gate) return _track != IntPtr.Zero || _bitmapMode; } }
     public int DelayMs { get; set; }
@@ -73,15 +97,98 @@ public sealed unsafe class SubtitleEngine : IDisposable
     public void Clear()
     {
         _preload?.Cancel();
+        StopLive();
         lock (_gate)
         {
             if (_track != IntPtr.Zero) { LibAss.ass_free_track(_track); _track = IntPtr.Zero; }
             _bitmaps.Clear();
             _bitmapMode = false;
             _events.Clear();
+            _seenText.Clear();
+            _seenBitmaps.Clear();
+            _lastActive = [];
             ExternalName = null;
         }
         Interlocked.Increment(ref _generation);
+    }
+
+    private void StopLive()
+    {
+        lock (_liveGate)
+        {
+            if (_liveCtx != null) { var c = _liveCtx; ffmpeg.avcodec_free_context(&c); _liveCtx = null; }
+            _liveStream = -1;
+        }
+    }
+
+    private void StartLive(AVCodecParameters* par, int streamIndex, AVRational timeBase, bool bitmap)
+    {
+        StopLive();
+        if (par == null) return;
+        var dec = ffmpeg.avcodec_find_decoder(par->codec_id);
+        if (dec == null) return;
+        var ctx = ffmpeg.avcodec_alloc_context3(dec);
+        if (ffmpeg.avcodec_parameters_to_context(ctx, par) < 0) { ffmpeg.avcodec_free_context(&ctx); return; }
+        ctx->pkt_timebase = timeBase;
+        if (ffmpeg.avcodec_open2(ctx, dec, null) < 0) { ffmpeg.avcodec_free_context(&ctx); return; }
+        lock (_liveGate)
+        {
+            _liveCtx = ctx;
+            _liveStream = streamIndex;
+            _liveTb = timeBase;
+            _liveBitmap = bitmap;
+            lock (_gate) { _liveRefW = ctx->width > 0 ? ctx->width : _videoW; _liveRefH = ctx->height > 0 ? ctx->height : _videoH; }
+        }
+    }
+
+    /// <summary>The stream the live decoder wants packets from, or -1.</summary>
+    public int LiveStream => _liveStream;
+
+    /// <summary>Called by the player's demux thread with every packet of <see cref="LiveStream"/>.</summary>
+    public void Feed(AVPacket* pkt)
+    {
+        lock (_liveGate)
+        {
+            if (_liveCtx == null || pkt->stream_index != _liveStream) return;
+            try { DecodeOne(_liveCtx, pkt, _liveTb, _liveBitmap, _liveRefW, _liveRefH); }
+            catch (Exception) { /* a broken subtitle packet must never take playback down */ }
+        }
+        Interlocked.Increment(ref _generation);
+    }
+
+    /// <summary>After a seek: drop the live decoder's state (PGS keeps half-built pictures).</summary>
+    public void FlushLive()
+    {
+        lock (_liveGate) if (_liveCtx != null) ffmpeg.avcodec_flush_buffers(_liveCtx);
+    }
+
+    /// <summary>Decodes one subtitle packet and adds what it holds to the track.</summary>
+    private void DecodeOne(AVCodecContext* ctx, AVPacket* pkt, AVRational tb, bool bitmap, int refW, int refH)
+    {
+        AVSubtitle sub;
+        int got = 0;
+        if (ffmpeg.avcodec_decode_subtitle2(ctx, &sub, &got, pkt) < 0 || got == 0) return;
+        try
+        {
+            var ptsSec = pkt->pts != ffmpeg.AV_NOPTS_VALUE ? pkt->pts * ffmpeg.av_q2d(tb) : 0;
+            var start = ptsSec + sub.start_display_time / 1000.0;
+            double dur = sub.end_display_time > sub.start_display_time && sub.end_display_time != uint.MaxValue
+                ? (sub.end_display_time - sub.start_display_time) / 1000.0
+                : pkt->duration > 0 ? pkt->duration * ffmpeg.av_q2d(tb) : double.NaN;
+            if (bitmap) { AddBitmap(&sub, start, dur, refW, refH); return; }
+            lock (_gate)
+            {
+                for (int r = 0; r < sub.num_rects; r++)
+                {
+                    var a = sub.rects[r]->ass;
+                    if (a == null) continue;
+                    var text = Marshal.PtrToStringUTF8((IntPtr)a) ?? "";
+                    if (text.Length == 0) continue;
+                    AddTextEvent((long)(start * 1000), (long)((double.IsNaN(dur) ? 4 : dur) * 1000), text);
+                }
+            }
+        }
+        finally { ffmpeg.avsubtitle_free(&sub); }
     }
 
     // Events kept for plain-text tracks so a style change can rebuild the track.
@@ -120,16 +227,26 @@ public sealed unsafe class SubtitleEngine : IDisposable
             fixed (byte* p = line) LibAss.ass_process_chunk(_track, p, line.Length, s, d);
     }
 
-    private void AddTextEvent(long startMs, long durMs, byte[] line)
+    /// <summary>Adds one decoded line (FFmpeg's "ReadOrder,Layer,Style,..." form) unless it
+    /// is already there. Each decoder numbers its lines itself, so the ReadOrder is replaced
+    /// with the engine's own counter (libass drops events whose ReadOrder repeats) and the
+    /// rest of the line is what identifies it. Call under _gate.</summary>
+    private void AddTextEvent(long startMs, long durMs, string text)
     {
         if (_track == IntPtr.Zero) return;
+        var comma = text.IndexOf(',');
+        var body = comma >= 0 ? text[(comma + 1)..] : text;
+        if (!_seenText.Add((startMs, body))) return;
+        var line = Encoding.UTF8.GetBytes($"{_readOrder++},{body}");
         if (_plainText) _events.Add((startMs, durMs, line));
         fixed (byte* p = line) LibAss.ass_process_chunk(_track, p, line.Length, startMs, durMs);
     }
 
-    /// <summary>Starts using an embedded track: the header now, every event from a
-    /// background scan of the whole file.</summary>
-    public void BeginEmbedded(string path, int streamIndex, string codec, bool bitmap, byte[]? header)
+    /// <summary>Starts using an embedded track: the header now, lines from the player's own
+    /// packets as they are read (<paramref name="par"/> is the stream's parameters), and for
+    /// a small file every line from a background scan as well.</summary>
+    public void BeginEmbedded(string path, int streamIndex, string codec, bool bitmap, byte[]? header,
+        AVCodecParameters* par = null, AVRational timeBase = default, bool preload = true)
     {
         Clear();
         lock (_gate)
@@ -137,10 +254,15 @@ public sealed unsafe class SubtitleEngine : IDisposable
             if (bitmap) _bitmapMode = true;
             else if (Available) NewTextTrack(header, IsPlainText(codec));
         }
-        var cts = new CancellationTokenSource();
-        _preload = cts;
-        var t = new Thread(() => Collect(path, streamIndex, bitmap, cts.Token)) { IsBackground = true, Name = "sub-preload", Priority = ThreadPriority.BelowNormal };
-        t.Start();
+        if (par != null) StartLive(par, streamIndex, timeBase, bitmap);
+        PreloadSeconds = -1;
+        if (preload || par == null)
+        {
+            var cts = new CancellationTokenSource();
+            _preload = cts;
+            var t = new Thread(() => Collect(path, streamIndex, bitmap, cts.Token)) { IsBackground = true, Name = "sub-preload", Priority = ThreadPriority.BelowNormal };
+            t.Start();
+        }
         Interlocked.Increment(ref _generation);
     }
 
@@ -163,12 +285,14 @@ public sealed unsafe class SubtitleEngine : IDisposable
         }
         else
         {
-            var events = CollectEvents(path, -1, false, CancellationToken.None, out var header, out var codec);
-            if (events is null) return false;
+            // The header comes from the decoder, so the lines are collected first and the
+            // track made once it is known.
+            var events = new List<(long Start, long Dur, string Text)>();
+            if (!CollectEvents(path, -1, false, CancellationToken.None, events.Add, out var header, out var codec)) return false;
             lock (_gate)
             {
                 NewTextTrack(header, IsPlainText(codec));
-                foreach (var e in events) AddTextEvent(e.Start, e.Dur, e.Line);
+                foreach (var e in events) AddTextEvent(e.Start, e.Dur, e.Text);
             }
         }
         ExternalName = Path.GetFileName(path);
@@ -176,54 +300,63 @@ public sealed unsafe class SubtitleEngine : IDisposable
         return true;
     }
 
+    /// <summary>Seconds the last background preload took, or -1 while it is still running.</summary>
+    public double PreloadSeconds { get; private set; } = -1;
+
     private void Collect(string path, int stream, bool bitmap, CancellationToken ct)
     {
+        var started = System.Diagnostics.Stopwatch.StartNew();
         try
         {
-            var events = CollectEvents(path, stream, bitmap, ct, out _, out _);
-            if (events is null || ct.IsCancellationRequested) return;
-            lock (_gate)
+            // Lines go in as they are found (in batches), not only once the whole file has
+            // been read, so a long file shows its early subtitles straight away.
+            var batch = new List<(long Start, long Dur, string Text)>();
+            void Flush()
             {
-                if (ct.IsCancellationRequested) return;
-                if (!bitmap) foreach (var e in events) AddTextEvent(e.Start, e.Dur, e.Line);
+                lock (_gate) { if (!ct.IsCancellationRequested) foreach (var e in batch) AddTextEvent(e.Start, e.Dur, e.Text); }
+                batch.Clear();
+                Interlocked.Increment(ref _generation);
             }
-            Interlocked.Increment(ref _generation);
+            var ok = CollectEvents(path, stream, bitmap, ct, e => { batch.Add(e); if (batch.Count >= 64) Flush(); }, out _, out _);
+            if (!ok || ct.IsCancellationRequested) return;
+            Flush();
+            PreloadSeconds = started.Elapsed.TotalSeconds;
         }
         catch (Exception) { /* a broken subtitle stream must never take playback down */ }
     }
 
-    private sealed record TextEvent(long Start, long Dur, byte[] Line);
-
-    private List<TextEvent>? CollectEvents(string path, int streamIndex, bool bitmap, CancellationToken ct, out byte[]? header, out string codec)
+    /// <summary>Reads every packet of one subtitle stream of a file. Text lines go to
+    /// <paramref name="sink"/>; bitmaps are added to the track directly.</summary>
+    private bool CollectEvents(string path, int streamIndex, bool bitmap, CancellationToken ct,
+        Action<(long Start, long Dur, string Text)> sink, out byte[]? header, out string codec)
     {
         header = null; codec = "";
         AVFormatContext* fmt = null;
-        if (ffmpeg.avformat_open_input(&fmt, path, null, null) < 0) return null;
+        if (ffmpeg.avformat_open_input(&fmt, path, null, null) < 0) return false;
         AVCodecContext* ctx = null;
         var pkt = ffmpeg.av_packet_alloc();
         try
         {
-            if (ffmpeg.avformat_find_stream_info(fmt, null) < 0) return null;
+            if (ffmpeg.avformat_find_stream_info(fmt, null) < 0) return false;
             var si = streamIndex >= 0 ? streamIndex : ffmpeg.av_find_best_stream(fmt, AVMediaType.AVMEDIA_TYPE_SUBTITLE, -1, -1, null, 0);
-            if (si < 0 || si >= fmt->nb_streams || fmt->streams[si]->codecpar->codec_type != AVMediaType.AVMEDIA_TYPE_SUBTITLE) return null;
+            if (si < 0 || si >= fmt->nb_streams || fmt->streams[si]->codecpar->codec_type != AVMediaType.AVMEDIA_TYPE_SUBTITLE) return false;
             var st = fmt->streams[si];
             var dec = ffmpeg.avcodec_find_decoder(st->codecpar->codec_id);
-            if (dec == null) return null;
+            if (dec == null) return false;
             codec = ffmpeg.avcodec_get_name(st->codecpar->codec_id) ?? "";
             ctx = ffmpeg.avcodec_alloc_context3(dec);
             ffmpeg.avcodec_parameters_to_context(ctx, st->codecpar);
             ctx->pkt_timebase = st->time_base;
-            if (ffmpeg.avcodec_open2(ctx, dec, null) < 0) return null;
+            if (ffmpeg.avcodec_open2(ctx, dec, null) < 0) return false;
             for (int i = 0; i < fmt->nb_streams; i++)
                 if (i != si) fmt->streams[i]->discard = AVDiscard.AVDISCARD_ALL;
             var refW = ctx->width > 0 ? ctx->width : _videoW;
             var refH = ctx->height > 0 ? ctx->height : _videoH;
 
-            var list = new List<TextEvent>();
             var tb = st->time_base;
             while (ffmpeg.av_read_frame(fmt, pkt) >= 0)
             {
-                if (ct.IsCancellationRequested) { ffmpeg.av_packet_unref(pkt); return null; }
+                if (ct.IsCancellationRequested) { ffmpeg.av_packet_unref(pkt); return false; }
                 if (pkt->stream_index == si)
                 {
                     AVSubtitle sub;
@@ -242,9 +375,9 @@ public sealed unsafe class SubtitleEngine : IDisposable
                             {
                                 var a = sub.rects[r]->ass;
                                 if (a == null) continue;
-                                var line = Encoding.UTF8.GetBytes(Marshal.PtrToStringUTF8((IntPtr)a) ?? "");
-                                if (line.Length == 0) continue;
-                                list.Add(new TextEvent((long)(start * 1000), (long)((double.IsNaN(dur) ? 4 : dur) * 1000), line));
+                                var text = Marshal.PtrToStringUTF8((IntPtr)a) ?? "";
+                                if (text.Length == 0) continue;
+                                sink(((long)(start * 1000), (long)((double.IsNaN(dur) ? 4 : dur) * 1000), text));
                             }
                         }
                         ffmpeg.avsubtitle_free(&sub);
@@ -257,7 +390,7 @@ public sealed unsafe class SubtitleEngine : IDisposable
                 header = new byte[ctx->subtitle_header_size];
                 new ReadOnlySpan<byte>(ctx->subtitle_header, ctx->subtitle_header_size).CopyTo(header);
             }
-            return list;
+            return true;
         }
         finally
         {
@@ -278,6 +411,7 @@ public sealed unsafe class SubtitleEngine : IDisposable
             {
                 var r = sub->rects[i];
                 if (r->type != AVSubtitleType.SUBTITLE_BITMAP || r->w <= 0 || r->h <= 0) continue;
+                if (!_seenBitmaps.Add(((long)Math.Round(start * 1000), r->x, r->y, r->w, r->h))) continue;
                 var px = new byte[r->w * r->h * 4];
                 var palette = (uint*)r->data[1];
                 for (int y = 0; y < r->h; y++)
@@ -320,11 +454,19 @@ public sealed unsafe class SubtitleEngine : IDisposable
                     LibAss.ass_set_margins(_renderer, 0, 0, 0, 0);
                 }
                 _hadContent = true;   // force a clear + redraw
+                _overlayFresh = true;
             }
 
             if (_bitmapMode)
             {
+                // Redraw only when the set of pictures on screen changes (or the overlay was
+                // just resized): clearing and re-blitting a full-screen overlay every frame
+                // cost a 4K screen dearly.
                 var active = _bitmaps.Where(b => b.Start <= now && now < b.End).ToList();
+                if (!_overlayFresh && active.SequenceEqual(_lastActive, ReferenceEqualityComparer.Instance))
+                    return active.Count > 0 ? _overlay : null;
+                _overlayFresh = false;
+                _lastActive = active;
                 Array.Clear(_overlay);
                 foreach (var b in active) BlitScaled(b, width, height);
                 changed = true;

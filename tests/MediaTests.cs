@@ -114,6 +114,32 @@ public class MediaTests
         Assert.NotNull(t!.At(1));
     }
 
+    [Fact]
+    public void Ten_bit_frames_reach_the_shader_as_the_same_picture_on_both_paths()
+    {
+        // Hardware decoding hands over P010, which is narrowed to NV12 by keeping each
+        // sample's high byte; software decoding goes through sws_scale. Both must give the
+        // same picture.
+        if (!Ready(out var why)) { Assert.Fail(why); return; }
+        double Mean(bool hw, out FramePixels pixels)
+        {
+            using var p = new MediaPlayer();
+            Assert.True(p.Open(Clips.Instance.Hevc10, new PlayerOptions { Volume = 0, GpuConvert = true, HwDecode = hw }), p.LastError);
+            using var f = WaitFrame(p);
+            Assert.NotNull(f);
+            pixels = f!.Pixels;
+            long sum = 0;
+            for (int y = 0; y < f.Height; y++) for (int x = 0; x < f.Width; x++) sum += f.Planes[0][y * f.Strides[0] + x];
+            return sum / (double)(f.Width * f.Height);
+        }
+        var hwMean = Mean(true, out var hwPixels);
+        var swMean = Mean(false, out var swPixels);
+        Assert.Equal(FramePixels.Nv12, hwPixels);
+        Assert.Equal(FramePixels.Nv12, swPixels);
+        Assert.InRange(hwMean, 16, 235);
+        Assert.InRange(Math.Abs(hwMean - swMean), 0, 2.0);
+    }
+
     private static VideoFrame? WaitFrame(MediaPlayer p, int ms = 3000)
     {
         var sw = Stopwatch.StartNew();
@@ -295,6 +321,39 @@ public class MediaTests
         byte[]? img = null;
         while (sw.ElapsedMilliseconds < 3000 && img is null) { img = p.Subtitles.Render(5.5, 640, 360, out _); Thread.Sleep(20); }
         Assert.NotNull(img);
+    }
+
+    [Fact]
+    public void Embedded_subtitles_come_from_the_playback_read_without_a_preload()
+    {
+        // Big files (4K films) are not scanned twice: the lines must arrive from the packets
+        // the player reads anyway, as playback reaches them.
+        if (!Ready(out var why)) { Assert.Fail(why); return; }
+        var limit = SubtitleEngine.PreloadLimitBytes;
+        SubtitleEngine.PreloadLimitBytes = 0;
+        try
+        {
+            using var p = new MediaPlayer();
+            var dir = Path.Combine(Clips.Instance.Dir, "embedded-live");
+            Directory.CreateDirectory(dir);
+            var copy = Path.Combine(dir, "subbed.mkv");
+            File.Copy(Clips.Instance.Mkv, copy, true);
+            Assert.True(p.Open(copy, new PlayerOptions { Volume = 0, SubLanguage = "en" }), p.LastError);
+            Assert.True(p.SubtitleStream >= 0);
+            p.Seek(4.5);
+            p.Play();
+            var sw = Stopwatch.StartNew();
+            byte[]? img = null;
+            while (sw.ElapsedMilliseconds < 8000 && img is null)
+            {
+                p.TakeFrame()?.Dispose();
+                if (p.Position > 5.5) img = p.Subtitles.Render(5.5, 640, 360, out _);
+                Thread.Sleep(10);
+            }
+            Assert.NotNull(img);
+            Assert.Equal(-1, p.Subtitles.PreloadSeconds);   // no background pass ran
+        }
+        finally { SubtitleEngine.PreloadLimitBytes = limit; }
     }
 
     [Fact]
