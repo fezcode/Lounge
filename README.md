@@ -52,6 +52,16 @@ controller, shows what each button does in each context (menus, watching, the
 keyboard, files, web pages, controller mouse, while an app runs), and rebinds a
 button by pressing the new one. Holds and combinations work too.
 
+## Waiting screen
+
+[![The waiting screen: illustrated scenes zooming in two layers over Lounge's own theme](docs/media/waiting-screen.webp)](docs/media/waiting-screen.mp4)
+
+Leave Lounge alone on a menu and it turns into a loading screen: illustrated scenes, a
+dark black-and-white background with a figure in full colour in front, the two layers
+zooming at different speeds and cutting on the beat of Lounge's own orchestral theme.
+Turn it on in **Settings → General → Waiting screen** and choose how long it waits. Any
+button brings the menu back. [Watch it with sound](docs/media/waiting-screen.mp4).
+
 ## What is inside
 
 - **Fourteen themes, fourteen homes.** Aurora (Apple TV-like hero and rows), Living Room

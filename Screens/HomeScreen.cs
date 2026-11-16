@@ -101,6 +101,7 @@ public sealed partial class HomeScreen : Screen
             HomeLayout.Floating => Floating(),
             HomeLayout.Terminal => Terminal(),
             HomeLayout.Signal => Signal(),
+            HomeLayout.Billboard => Billboard(),
             _ => Aurora(),
         };
         _building = false;
@@ -200,7 +201,7 @@ public sealed partial class HomeScreen : Screen
         // Saga shows the picture in its own place, on the right.
         if (T.Def.Layout == HomeLayout.Hall) { L.Window.Backdrop.SetArt(null); ShowSagaItem(e); return; }
         if (T.Def.Layout == HomeLayout.Terminal) { L.Window.Backdrop.SetArt(null); ShowTerminalItem(e); return; }
-        if (T.Def.Layout == HomeLayout.Signal) { L.Window.Backdrop.SetArt(null); return; }
+        if (T.Def.Layout is HomeLayout.Signal or HomeLayout.Billboard) { L.Window.Backdrop.SetArt(null); return; }
         var art = e.Tile is null ? e.Backdrop ?? e.Art ?? e.Video?.Art : null;
         // Apple TV-like layouts show the art sharp and full; the rest blur it into a wash.
         var full = T.Def.Layout is HomeLayout.TopTabsHero or HomeLayout.Sidebar;

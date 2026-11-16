@@ -27,6 +27,34 @@ public class FocusTests
     private static string? At(FocusScope s) => s.Focused?.Tag as string;
 
     [Fact]
+    public void Menu_on_the_left_reaches_its_shelf_below_and_comes_back()
+    {
+        // Heatwave: three destinations down the left, a row of four along the bottom.
+        var menu = new FocusList(horizontal: false);
+        var shelf = new FocusList(horizontal: false, rememberIndex: false);
+        var row = shelf.Add(new FocusList(horizontal: true));
+        var pos = new Dictionary<FocusItem, Pt>();
+        for (int i = 0; i < 3; i++) pos[menu.Add(new FocusItem(tag: $"m{i}"))] = new Pt(100, 100 + i * 60);
+        for (int i = 0; i < 4; i++) pos[row.Add(new FocusItem(tag: $"s{i}"))] = new Pt(100 + i * 300, 800);
+        var s = new FocusScope(new FocusMenuShelf(menu, shelf)) { Locate = i => pos.TryGetValue(i, out var p) ? p : null };
+        s.Refresh();
+
+        Assert.Equal("m0", At(s));
+        s.Move(Dir.Right);
+        Assert.Equal("s0", At(s));        // Right from any destination reaches the shelf
+        s.Move(Dir.Right);
+        Assert.Equal("s1", At(s));
+        s.Move(Dir.Up);
+        Assert.Equal("m0", At(s));        // and Up comes back to the same destination
+        s.Move(Dir.Down); s.Move(Dir.Down);
+        Assert.Equal("m2", At(s));
+        s.Move(Dir.Down);
+        Assert.StartsWith("s", At(s));    // Down past the last destination reaches it too
+        s.Move(Dir.Left); s.Move(Dir.Left); s.Move(Dir.Left); s.Move(Dir.Left);
+        Assert.Equal("m2", At(s));        // Left off the start of the row returns to the menu
+    }
+
+    [Fact]
     public void Moves_within_and_between_rows_remembering_position()
     {
         var (s, _) = Rows((5, 0), (5, 0));

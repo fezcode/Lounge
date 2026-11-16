@@ -49,6 +49,8 @@ public sealed record SettingDescriptor(
     public double DisplayScale { get; init; } = 1;
     /// <summary>What an empty text setting shows.</summary>
     public string Empty { get; init; } = "None";
+    /// <summary>The row shows only while this toggle is on.</summary>
+    public string? ShownWhen { get; init; }
 
     public string ShowValue(object? value)
     {

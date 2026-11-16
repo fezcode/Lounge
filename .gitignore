@@ -4,3 +4,4 @@ dist/
 native/
 *.user
 .vs/
+tmp/

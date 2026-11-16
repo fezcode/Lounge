@@ -27,6 +27,7 @@ public static class UiSounds
         ["phosphor"] = new(1.3, 0.4, 0.55, Chip: true),   // a terminal's short blip
         ["carplay"] = new(1.5, 0.12, 0.55),   // a dashboard's tick: high, clean and quick
         ["signal"] = new(0.94, 0.34, 0.68),   // a soft electronic tap, with a short cyan-light ring
+        ["heatwave"] = new(0.8, 0.3, 0.7),   // a short string pluck, a little room on it
     };
 
     public static float[] Render(UiSound sound, string theme)

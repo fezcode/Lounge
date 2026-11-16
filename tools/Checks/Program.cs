@@ -353,12 +353,17 @@ Check("On the Web screen, X opens a site's options", WebOptionsWithX);
     private static void MenuClock()
     {
         static IEnumerable<TextBlock> Texts(Control c) => c.GetVisualDescendants().OfType<TextBlock>();
-        var now = DateTime.Now.ToString(L.Settings.Bool(K.Clock24h) ? "HH:mm" : "h:mm tt");
+        string Clock() => DateTime.Now.ToString(L.Settings.Bool(K.Clock24h) ? "HH:mm" : "h:mm tt");
+        var before = Clock();
         var entries = new List<MenuEntry> { new("Pause", "pause", null) };
         _w.Menu("Some video", entries, clock: true);
         Pump(400);
+        // The wait above takes seconds: the minute can turn over during it, and the menu then
+        // rightly shows the new one. Either reading is the time.
+        var now = Clock();
         var withClock = _w.GetVisualDescendants().OfType<ModalLayer>().Last();
-        Assert(Texts(withClock).Any(t => t.Text == now), $"no '{now}' in the View menu");
+        Assert(Texts(withClock).Any(t => t.Text == now || t.Text == before),
+            $"no '{before}' or '{now}' in the View menu; texts: {string.Join(" | ", Texts(withClock).Select(t => t.Text).Take(12))}");
         _w.CloseOverlays();
         Pump(400);
         _w.Menu("Plain", entries);

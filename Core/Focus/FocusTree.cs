@@ -220,6 +220,55 @@ public sealed class FocusGrid : FocusNode
     }
 }
 
+/// <summary>A menu down the left with its collection along the bottom (Heatwave's home):
+/// Right from the menu, or Down past its last entry, goes to the collection; Left or Up
+/// out of the collection returns to the menu on the destination it came from.</summary>
+public sealed class FocusMenuShelf : FocusNode
+{
+    private readonly FocusNode _menu, _shelf;
+    private bool _inShelf;
+
+    public FocusMenuShelf(FocusNode menu, FocusNode shelf)
+    {
+        _menu = menu; _shelf = shelf;
+        menu.Parent = this; shelf.Parent = this;
+    }
+
+    private FocusNode Active => _inShelf && _shelf.HasItems ? _shelf : _menu;
+    public override bool HasItems => _menu.HasItems || _shelf.HasItems;
+    public override IEnumerable<FocusItem> Items => _menu.Items.Concat(_shelf.Items);
+    public override FocusItem? Current => Active.HasItems ? Active.Current : (_menu.HasItems ? _menu.Current : _shelf.Current);
+
+    internal override bool Move(Dir d, FocusScope scope)
+    {
+        if (Current is null) return false;
+        var active = Active;
+        if (active.Move(d, scope)) return true;
+        var hint = scope.LocateItem(Current);
+        if (active == _menu && d is Dir.Right or Dir.Down && _shelf.HasItems)
+        {
+            _inShelf = true;
+            _shelf.Enter(d, hint, scope);
+            return true;
+        }
+        if (active == _shelf && d is Dir.Left or Dir.Up && _menu.HasItems)
+        {
+            _inShelf = false;   // back to the destination it came from (the menu remembers it)
+            return true;
+        }
+        return false;
+    }
+
+    internal override void Enter(Dir? from, Pt? hint, FocusScope scope) => Active.Enter(from, hint, scope);
+
+    internal override bool Select(FocusItem item)
+    {
+        if (_menu.Select(item)) { _inShelf = false; return true; }
+        if (_shelf.Select(item)) { _inShelf = true; return true; }
+        return false;
+    }
+}
+
 /// <summary>Free-form layouts (the controller diagram): a move goes to the nearest item
 /// in that direction, favouring items in line over items off to the side.</summary>
 public sealed class FocusSpatial : FocusNode

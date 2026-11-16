@@ -30,6 +30,13 @@ public sealed class SoundEngine : IWaveProvider, IDisposable
     private double _fadeStep;             // gain per frame
     private long _framesUntilStart = -1;  // delay before fading in
 
+    // The waiting screen theme: rendered once, looped, and laid over the ambient,
+    // which ducks out while it plays.
+    private float[]? _attract;
+    private bool _attractRendering;
+    private int _attractPos;
+    private double _attractGain, _attractTarget;
+
     public WaveFormat WaveFormat { get; } = WaveFormat.CreateIeeeFloatWaveFormat(AmbientSynth.SampleRate, 2);
 
     public float AmbientVolume { get; set; } = 0.35f;
@@ -71,8 +78,64 @@ public sealed class SoundEngine : IWaveProvider, IDisposable
                     .OrderBy(_ => _rng.Next()).ToList();
                 _folderIndex = 0;
             }
+            else if (theme == ThemeLoop) EnsureAttractRendered();
             else _synth = new AmbientSynth(AmbientSynth.Presets.ContainsKey(theme) ? theme : "aurora", _rng.Next());
         }
+    }
+
+    /// <summary>The theme whose ambient is the attract theme itself, looped.</summary>
+    public const string ThemeLoop = "heatwave";
+    private int _loopPos;
+
+    /// <summary>Gets the attract theme ready ahead of time (waiting screen on, or Heatwave),
+    /// so it starts the moment it is wanted.</summary>
+    public void PrewarmAttract() { lock (_gate) EnsureAttractRendered(); }
+
+    /// <summary>Loads the attract theme on a worker: from the copy kept on disk, or rendered
+    /// (a few seconds) and then kept. Call under the lock.</summary>
+    private void EnsureAttractRendered()
+    {
+        if (_attract is not null || _attractRendering || _out is null) return;
+        _attractRendering = true;
+        Task.Run(() =>
+        {
+            var data = LoadKept() ?? Keep(AttractTheme.Render());
+            lock (_gate) { _attract = data; _attractPos = 0; _attractRendering = false; }
+        });
+    }
+
+    private static string KeptPath => Path.Combine(Lounge.Core.AppPaths.Root, "cache", $"attract-theme-r{AttractTheme.Revision}.pcm");
+
+    private static float[]? LoadKept()
+    {
+        try
+        {
+            if (!File.Exists(KeptPath)) return null;
+            var bytes = File.ReadAllBytes(KeptPath);
+            if (bytes.Length == 0 || bytes.Length % 8 != 0) return null;
+            var data = new float[bytes.Length / 4];
+            Buffer.BlockCopy(bytes, 0, data, 0, bytes.Length);
+            return data;
+        }
+        catch (Exception) { return null; }
+    }
+
+    private static float[] Keep(float[] data)
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(KeptPath)!;
+            Directory.CreateDirectory(dir);
+            // Older renders go: only the current one is ever read.
+            foreach (var old in Directory.EnumerateFiles(dir, "attract-theme-r*.pcm"))
+                if (old != KeptPath) File.Delete(old);
+            var bytes = new byte[data.Length * 4];
+            Buffer.BlockCopy(data, 0, bytes, 0, bytes.Length);
+            File.WriteAllBytes(KeptPath + ".tmp", bytes);
+            File.Move(KeptPath + ".tmp", KeptPath, overwrite: true);
+        }
+        catch (Exception) { }
+        return data;
     }
 
     /// <summary>Wants ambient on (shell idle) or off (something else is playing).
@@ -85,7 +148,8 @@ public sealed class SoundEngine : IWaveProvider, IDisposable
             if (on)
             {
                 if (_ambientTarget >= 1 && _framesUntilStart < 0) return;
-                _framesUntilStart = immediate ? 0 : (long)(DelayMs / 1000.0 * AmbientSynth.SampleRate);
+                // Heatwave's music is the theme itself: it starts at once.
+                _framesUntilStart = immediate || _theme == ThemeLoop ? 0 : (long)(DelayMs / 1000.0 * AmbientSynth.SampleRate);
                 _fadeStep = 1.0 / Math.Max(1, FadeMs / 1000.0 * AmbientSynth.SampleRate);
             }
             else
@@ -97,6 +161,19 @@ public sealed class SoundEngine : IWaveProvider, IDisposable
             }
         }
     }
+
+    /// <summary>Plays the attract theme (fading in over a second, the ambient ducking out
+    /// under it) or stops it (400 ms). The first call renders it on a worker.</summary>
+    public void SetAttract(bool on)
+    {
+        lock (_gate)
+        {
+            _attractTarget = on ? 1 : 0;
+            if (on) EnsureAttractRendered();
+        }
+    }
+
+    public bool AttractPlaying { get { lock (_gate) return _attractTarget > 0; } }
 
     public void Play(UiSound sound)
     {
@@ -134,10 +211,28 @@ public sealed class SoundEngine : IWaveProvider, IDisposable
                     if (_ambientGain < _ambientTarget) _ambientGain = Math.Min(_ambientTarget, _ambientGain + _fadeStep);
                     else if (_ambientGain > _ambientTarget) _ambientGain = Math.Max(_ambientTarget, _ambientGain - _fadeStep);
                     // An equal-power curve sounds even across the fade.
-                    var g = (float)(Math.Sin(_ambientGain * Math.PI / 2) * AmbientVolume);
+                    var g = (float)(Math.Sin(_ambientGain * Math.PI / 2) * AmbientVolume * (1 - _attractGain));
                     outSpan[i * 2] += amb[i * 2] * g;
                     outSpan[i * 2 + 1] += amb[i * 2 + 1] * g;
                 }
+            }
+
+            if (_attract is { } theme && (_attractGain > 0 || _attractTarget > 0))
+            {
+                var up = 1.0 / AmbientSynth.SampleRate;
+                var down = 1.0 / (0.4 * AmbientSynth.SampleRate);
+                var level = Math.Max(AmbientVolume, 0.25f);
+                for (int i = 0; i < frames; i++)
+                {
+                    if (_attractGain < _attractTarget) _attractGain = Math.Min(_attractTarget, _attractGain + up);
+                    else if (_attractGain > _attractTarget) _attractGain = Math.Max(_attractTarget, _attractGain - down);
+                    var g = (float)(Math.Sin(_attractGain * Math.PI / 2) * level);
+                    outSpan[i * 2] += theme[_attractPos] * g;
+                    outSpan[i * 2 + 1] += theme[_attractPos + 1] * g;
+                    _attractPos += 2;
+                    if (_attractPos >= theme.Length) _attractPos = 0;
+                }
+                if (_attractGain <= 0 && _attractTarget <= 0) _attractPos = 0;   // starts from the top next time
             }
 
             for (int s = _oneShots.Count - 1; s >= 0; s--)
@@ -176,6 +271,16 @@ public sealed class SoundEngine : IWaveProvider, IDisposable
                 done += _file.Read(span[done..]);
             }
             span[done..].Clear();
+        }
+        else if (_theme == ThemeLoop)
+        {
+            // Heatwave: the attract theme, looped (silent for the moment it takes to render).
+            if (_attract is not { } loop) { span.Clear(); EnsureAttractRendered(); return; }
+            for (int i = 0; i < span.Length; i++)
+            {
+                span[i] = loop[_loopPos++];
+                if (_loopPos >= loop.Length) _loopPos = 0;
+            }
         }
         else (_synth ??= new AmbientSynth(_theme)).Read(span);
     }

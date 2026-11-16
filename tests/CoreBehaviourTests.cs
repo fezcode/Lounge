@@ -399,10 +399,10 @@ public class AudioAndThemeTests
     }
 
     [Fact]
-    public void Fourteen_themes_with_distinct_layouts_and_ambient()
+    public void Fifteen_themes_with_distinct_layouts_and_ambient()
     {
         var all = Lounge.Core.Themes.Themes.All;
-        Assert.Equal(14, all.Count);
+        Assert.Equal(15, all.Count);
         Assert.Equal(all.Count, all.Select(t => t.Layout).Distinct().Count());
         Assert.Equal(all.Count, all.Select(t => t.Backdrop).Distinct().Count());
         Assert.Equal(all.Count, all.Select(t => t.AmbientPreset).Distinct().Count());

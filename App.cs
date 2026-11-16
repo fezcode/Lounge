@@ -137,6 +137,7 @@ public class App : Application
         L.Sound.SoundsEnabled = s.Bool(K.Sounds);
         L.Sound.SoundsVolume = s.Int(K.SoundVolume) / 100f;
         if (!s.Bool(K.Ambient)) L.Sound.SetAmbient(false);
+        if (s.Bool(K.WaitingScreen) || T.Def.AmbientPreset == SoundEngine.ThemeLoop) L.Sound.PrewarmAttract();
     }
 
     /// <summary>The agent starts with Windows when enabled; turning it on also starts it now.</summary>

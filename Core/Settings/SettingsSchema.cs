@@ -9,6 +9,8 @@ public static class K
     public const string ShowClock = "general.showClock";
     public const string Clock24h = "general.clock24h";
     public const string IdleDimMinutes = "general.idleDimMinutes";
+    public const string WaitingScreen = "general.waitingScreen";
+    public const string WaitingScreenSeconds = "general.waitingScreenSeconds";
     public const string LaunchAtLogin = "general.launchAtLogin";
     public const string AlwaysOnTop = "general.alwaysOnTop";
     public const string Display = "general.display";
@@ -155,6 +157,7 @@ public static class SettingsSchema
         new("ambient", "Ambient"),
         new("phosphor", "Phosphor"),
         new("signal", "Signal"),
+        new("heatwave", "Heatwave"),
     ];
 
     public static readonly IReadOnlyList<SettingChoice> Accents =
@@ -223,6 +226,8 @@ public static class SettingsSchema
             Toggle(K.ShowClock, "General", "Show clock", true),
             Toggle(K.Clock24h, "General", "24-hour clock", true),
             Int(K.IdleDimMinutes, "General", "Dim when idle", 10, 0, 60, 1, " min", "Fades to a quiet clock after this long without input. 0 turns it off."),
+            Toggle(K.WaitingScreen, "General", "Waiting screen", false, "Left alone on a menu, Lounge shows illustrated scenes over its own music, like a game's loading screen. Any button brings the menu back."),
+            Int(K.WaitingScreenSeconds, "General", "Waiting screen after", 30, 5, 300, 5, " s", "How long Lounge sits untouched on a menu before the waiting screen.") with { ShownWhen = K.WaitingScreen },
             Toggle(K.LaunchAtLogin, "General", "Open Lounge when Windows starts", false),
             // The monitors are only known at run time: the Shell lists them (empty = the main one).
             Choice(K.Display, "General", "Screen", "", [], "Which monitor Lounge fills. It moves there as soon as you choose."),

@@ -339,9 +339,9 @@ public sealed class Backdrop : Grid
         if (d.Backdrop == BackdropStyle.Snowfall) Snowfall(a, b, c);
         if (d.Backdrop == BackdropStyle.Haze) Haze(a, b, c);
         if (d.Backdrop == BackdropStyle.Crt) Crt(a, b, c);
-        if (d.Backdrop == BackdropStyle.Signal) Signal();
+        if (d.Backdrop is BackdropStyle.Signal or BackdropStyle.Heatwave) Signal(Color.Parse(d.Bg0));
         var snowy = d.Backdrop == BackdropStyle.Snowfall;
-        var signal = d.Backdrop == BackdropStyle.Signal;
+        var signal = d.Backdrop is BackdropStyle.Signal or BackdropStyle.Heatwave;
 
         _scrim.Background = new LinearGradientBrush
         {
@@ -359,10 +359,12 @@ public sealed class Backdrop : Grid
         UpdateTimer();
     }
 
-    /// <summary>Signal's supplied character textures stay sharp behind a local left veil;
-    /// the shared bottom scrim keeps the collection and controller hints legible.</summary>
-    private void Signal()
+    /// <summary>Signal's supplied character textures (and Heatwave's illustrated scenes) stay
+    /// sharp behind a local left veil; the shared bottom scrim keeps the collection and
+    /// controller hints legible.</summary>
+    private void Signal(Color veil)
     {
+        byte V(double a) => (byte)(a * 255);
         _scene.Children.Add(_signalPictures);
         _scene.Children.Add(new Border
         {
@@ -373,10 +375,10 @@ public sealed class Backdrop : Grid
                 EndPoint = new RelativePoint(1, 0, RelativeUnit.Relative),
                 GradientStops =
                 {
-                    new GradientStop(Color.Parse("#B303040A"), 0),
-                    new GradientStop(Color.Parse("#7503040A"), 0.28),
-                    new GradientStop(Color.Parse("#1203040A"), 0.65),
-                    new GradientStop(Color.Parse("#2603040A"), 1),
+                    new GradientStop(Color.FromArgb(V(0.70), veil.R, veil.G, veil.B), 0),
+                    new GradientStop(Color.FromArgb(V(0.46), veil.R, veil.G, veil.B), 0.28),
+                    new GradientStop(Color.FromArgb(V(0.07), veil.R, veil.G, veil.B), 0.65),
+                    new GradientStop(Color.FromArgb(V(0.15), veil.R, veil.G, veil.B), 1),
                 },
             },
         });
@@ -393,12 +395,17 @@ public sealed class Backdrop : Grid
     /// request may land, and leaving the theme invalidates every outstanding load.</summary>
     public void SetSignalScene(string scene)
     {
-        if (T.Def.Backdrop != BackdropStyle.Signal) return;
+        if (T.Def.Backdrop is not (BackdropStyle.Signal or BackdropStyle.Heatwave)) return;
         scene = scene is "night-frequency" or "chromatic-drift" or "magenta-horizon" ? scene : "signal-bloom";
         if (scene == _signalScene) return;
         _signalScene = scene;
         var generation = ++_signalGeneration;
-        var path = $"avares://{typeof(Backdrop).Assembly.GetName().Name}/Assets/Backgrounds/Signal/{scene}.png";
+        var asm = typeof(Backdrop).Assembly.GetName().Name;
+        // Heatwave borrows the attract mode's neon scenes: the beach, the hills at night,
+        // the drive-in and the coast road.
+        var path = T.Def.Backdrop == BackdropStyle.Heatwave
+            ? $"avares://{asm}/Assets/Attract/{scene switch { "night-frequency" => "10", "chromatic-drift" => "06", "magenta-horizon" => "09", _ => "03" }}-bg.webp"
+            : $"avares://{asm}/Assets/Backgrounds/Signal/{scene}.png";
         _ = LoadSignalScene(scene, path, generation);
     }
 
@@ -409,7 +416,7 @@ public sealed class Backdrop : Grid
         var bmp = await ImageCache.LoadAsync(path, 1920);
         void Apply()
         {
-            if (generation != _signalGeneration || T.Def.Backdrop != BackdropStyle.Signal || bmp is null) return;
+            if (generation != _signalGeneration || T.Def.Backdrop is not (BackdropStyle.Signal or BackdropStyle.Heatwave) || bmp is null) return;
             var (back, backFade, front, frontFade) = _signalAFront
                 ? (_signalB, _signalFadeB, _signalA, _signalFadeA)
                 : (_signalA, _signalFadeA, _signalB, _signalFadeB);

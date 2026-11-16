@@ -200,6 +200,11 @@ public sealed class AmbientSynth
                 [(85, 2), (83, 2), (78, 2), (76, 2), (74, 4), (0, 4)],
             ],
         },
+        // Heatwave plays the attract theme (AttractTheme), rendered and looped by the sound
+        // engine; this dark D-minor bed is only its stand-in for anything that asks the synth.
+        ["heatwave"] = new("heatwave", "Heatwave",
+            [[38, 50, 53, 57, 62], [38, 50, 53, 57, 62], [34, 50, 53, 58, 62], [33, 49, 52, 57, 61]],
+            4.0, 0.12, 0.35, 8, 0.0, 0.0, 1.0, [62, 65, 69, 74], 0.4, 0.5),
     };
 
     private readonly AmbientPreset _p;

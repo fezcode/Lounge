@@ -46,6 +46,10 @@ public enum HomeLayout
     /// <summary>Lounge Signal: luminous artwork behind a typographic masthead, a horizontal
     /// destination selector and a compact collection shelf.</summary>
     Signal,
+    /// <summary>Heatwave: a crime-caper poster. An illustrated scene fills the screen, the
+    /// destinations stack down the left in tall condensed capitals with the chosen one on a
+    /// slanted bar, and its collection runs along the bottom.</summary>
+    Billboard,
 }
 
 /// <summary>A procedural default backdrop, so themes need no shipped wallpapers. Projector:
@@ -58,7 +62,7 @@ public enum HomeLayout
 /// fog drifting and snow falling. Haze: a soft out-of-focus wash of teal and warm peach, like
 /// a photograph seen through frosted glass. Crt: a dark green screen with scanlines, a bright
 /// band rolling slowly down it and the corners darkened by the curve of the glass.</summary>
-public enum BackdropStyle { Aurora, Sunset, Fanart, Waves, Glow, Projector, Pixel, Drive, Mist, Liquid, Snowfall, Haze, Crt, Signal }
+public enum BackdropStyle { Aurora, Sunset, Fanart, Waves, Glow, Projector, Pixel, Drive, Mist, Liquid, Snowfall, Haze, Crt, Signal, Heatwave }
 
 /// <summary>Everything a theme decides. Colours are #RRGGBB or #AARRGGBB strings so Core
 /// stays free of Avalonia; the Shell turns them into brushes.</summary>
@@ -332,7 +336,25 @@ public static class Themes
         AmbientPreset = "signal", SoundSet = "signal",
     };
 
-    public static readonly IReadOnlyList<ThemeDefinition> All = [Aurora, LivingRoom, Kodi, ConsoleOne, Series, ScreeningRoom, Arcade, CarPlay, Daylight, Liquid, Saga, Ambient, Phosphor, Signal];
+    /// <summary>A neon-sunset crime caper: the attract mode's illustrated scenes behind the
+    /// home screen, hot pink on deep purple, tall condensed capitals, and the attract theme's
+    /// strings, choir and timpani as its music.</summary>
+    public static readonly ThemeDefinition Heatwave = new()
+    {
+        Id = "heatwave", Name = "Heatwave", Layout = HomeLayout.Billboard, Backdrop = BackdropStyle.Heatwave,
+        Bg0 = "#0D0614", Bg1 = "#07030C",
+        BackdropA = "#FF3D8B", BackdropB = "#22D3C5", BackdropC = "#FF9A3C",
+        Surface = "#C4180A26", SurfaceStrong = "#F5160920", Line = "#66FF7AB6",
+        Text = "#FFF5FA", TextMuted = "#E0C2D2", TextFaint = "#A28399",
+        Accent = "#FF4FA3", OnAccent = "#16051A", Focus = "#FF4FA3",
+        Danger = "#FF6A3C", Success = "#2EE6C8",
+        Radius = 6, RadiusLarge = 10, FocusScale = 1.04, SpringStiffness = 360, SpringDamping = 28,
+        UppercaseHeaders = true, HeaderLetterSpacing = 1.5, TitleWeight = 600,
+        BodyFont = "Manrope", DisplayFont = "Barlow Condensed", ArtTone = "#4A1F4F",
+        AmbientPreset = "heatwave", SoundSet = "heatwave",
+    };
+
+    public static readonly IReadOnlyList<ThemeDefinition> All = [Aurora, LivingRoom, Kodi, ConsoleOne, Series, ScreeningRoom, Arcade, CarPlay, Daylight, Liquid, Saga, Ambient, Phosphor, Signal, Heatwave];
 
     public static ThemeDefinition Get(string id) => All.FirstOrDefault(t => t.Id == id) ?? Aurora;
 }

@@ -80,6 +80,27 @@ internal static class Program
                 return 0;
             }
 
+            // --attract-frames <start s> <length s> <fps>: the waiting screen frame by frame,
+            // for the README clip (tools/attract/clip.ps1 adds the music and encodes it).
+            if (args.Contains("--attract-frames"))
+            {
+                var a = args.SkipWhile(x => x != "--attract-frames").Skip(1).Select(double.Parse).ToArray();
+                double start = a[0], length = a[1], fps = a[2];
+                for (int f = 0; f < (int)Math.Round(length * fps); f++)
+                {
+                    _window.PreviewAttract(start + f / fps, 5);
+                    Pump(2);
+                    using var frame = _window.CaptureRenderedFrame();
+                    frame!.Save(Path.Combine(_out, $"frame-{f:0000}.png"));
+                }
+                var pcm = Lounge.Core.Audio.AttractTheme.Render();
+                using (var wav = new NAudio.Wave.WaveFileWriter(Path.Combine(_out, "attract-theme.wav"),
+                           NAudio.Wave.WaveFormat.CreateIeeeFloatWaveFormat(Lounge.Core.Audio.AttractTheme.SampleRate, 2)))
+                    wav.WriteSamples(pcm, 0, pcm.Length);
+                Console.WriteLine($"  wrote {(int)Math.Round(length * fps)} frames");
+                return 0;
+            }
+
             // --theme <id> renders just that theme.
             var only = args.SkipWhile(a => a != "--theme").Skip(1).FirstOrDefault();
             foreach (var theme in Core.Themes.Themes.All.Where(x => only is null || x.Id == only))
@@ -153,6 +174,18 @@ internal static class Program
                 }
             }
 
+            if (only is null || only == "attract")
+            {
+                _window.PreviewAttract(Lounge.Core.Attract.AttractChoreo.SceneSeconds * 0.5, 5);
+                Shot("attract");
+                // The theme too, to listen to without waiting for the idle timer.
+                var pcm = Lounge.Core.Audio.AttractTheme.Render();
+                using (var wav = new NAudio.Wave.WaveFileWriter(Path.Combine(_out, "attract-theme.wav"),
+                           NAudio.Wave.WaveFormat.CreateIeeeFloatWaveFormat(Lounge.Core.Audio.AttractTheme.SampleRate, 2)))
+                    wav.WriteSamples(pcm, 0, pcm.Length);
+                Console.WriteLine("  wrote attract-theme.wav");
+            }
+
             if (only is null) RenderBanner();
             Console.WriteLine($"Previews written to {_out}");
             return 0;
@@ -213,8 +246,9 @@ internal static class Program
     {
         Pump();
         var until = DateTime.Now.AddSeconds(15);
-        while ((ImageCache.Busy || T.Def.Id == "signal" && !_window.Backdrop.SignalSceneReady) && DateTime.Now < until) Pump(5);
-        if (T.Def.Id == "signal" && !_window.Backdrop.SignalSceneReady)
+        var pictured = T.Def.Id is "signal" or "heatwave";
+        while ((ImageCache.Busy || pictured && !_window.Backdrop.SignalSceneReady) && DateTime.Now < until) Pump(5);
+        if (pictured && !_window.Backdrop.SignalSceneReady)
             throw new InvalidOperationException("Signal artwork did not load for " + name);
         Pump(5);
         // Freed straight away: left to the garbage collector, a couple of hundred full-screen

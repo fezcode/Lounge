@@ -127,6 +127,15 @@ public sealed class SettingsPanel : Grid, IInputLayer
     private void OnChanged(string key)
     {
         if (_refresh.TryGetValue(key, out var r)) Dispatcher.UIThread.Post(r);
+        // A toggle that shows or hides other rows rebuilds the section, keeping focus.
+        if (Section is { } name && SettingsSchema.All.Any(d => d.Section == name && d.ShownWhen == key))
+            Dispatcher.UIThread.Post(() =>
+            {
+                var keep = _scope.Focused is { } f && _rowSettings.TryGetValue(f, out var cur) ? cur.Key : null;
+                ShowSection(name);
+                var again = _rowSettings.FirstOrDefault(p => p.Value.Key == keep).Key;
+                if (again is not null) _scope.Focus(again);
+            });
     }
 
     private void ShowSection(string name)
@@ -137,7 +146,7 @@ public sealed class SettingsPanel : Grid, IInputLayer
         _rows.Clear();
         _rowSettings.Clear();
         _refresh.Clear();
-        foreach (var d in SettingsSchema.All.Where(d => d.Section == name))
+        foreach (var d in SettingsSchema.All.Where(d => d.Section == name && (d.ShownWhen is null || L.Settings.Bool(d.ShownWhen))))
             AddRow(d);
         if (name == "About") AddAbout();
         if (name == "Library") AddRescanStatus();

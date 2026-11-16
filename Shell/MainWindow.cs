@@ -15,6 +15,8 @@ using Lounge.Media;
 using Lounge.Platform;
 using Lounge.Screens;
 
+using Lounge.Core.Attract;
+
 namespace Lounge.Shell;
 
 /// <summary>The one window. It scales a 1080-line design grid to any screen, stacks the
@@ -34,6 +36,7 @@ public sealed class MainWindow : Window
     private readonly ToastHost _toasts = new();
     private readonly ControllerOverlay _padOverlay = new();
     private readonly IdleDim _dim = new();
+    private readonly AttractMode _attract = new();
     private readonly List<Screen> _stack = new();
     private readonly List<Control> _overlayStack = new();
     private readonly Stopwatch _clock = Stopwatch.StartNew();
@@ -77,6 +80,7 @@ public sealed class MainWindow : Window
         _root.Children.Add(_overlays);
         _root.Children.Add(_toasts);
         _root.Children.Add(_padOverlay);
+        _root.Children.Add(_attract);
         _root.Children.Add(_dim);
         _scaler.Child = _root;
         Content = _scaler;
@@ -410,6 +414,12 @@ public sealed class MainWindow : Window
     private void HandleAction(ActionEvent e)
     {
         if (e.Phase == ActionPhase.Pressed) NoteInput();
+        if (_attract.Active)
+        {
+            // Like the dim: the press that ends it goes nowhere else.
+            if (e.Phase == ActionPhase.Pressed) SetAttract(false);
+            return;
+        }
         if (_dim.Active)
         {
             if (e.Phase == ActionPhase.Pressed) { _dim.Set(false); UpdateAmbient(); }
@@ -601,6 +611,23 @@ public sealed class MainWindow : Window
         var watching = Top is PlayerScreen && L.Player.IsPlaying;
         if (idleMinutes > 0 && !_dim.Active && !watching && L.Dormant.Mode == ShellMode.Active && idleFor > idleMinutes * 60_000L)
             _dim.Set(true);
+
+        var menu = Top is not (PlayerScreen or WebScreen or StarfallScreen) && !L.Player.IsPlaying;
+        var inCharge = L.Dormant.Mode == ShellMode.Active && (inFront || _windowed);
+        var waiting = L.Settings.Bool(K.WaitingScreen);
+        if (waiting) L.Sound?.PrewarmAttract();   // turned on just now: get the music ready before it is needed
+        if (_attract.Active && !(waiting && inCharge && menu && !_dim.Active)) SetAttract(false);
+        else if (!_attract.Active && AttractRules.CanStart(waiting, idleFor, L.Settings.Int(K.WaitingScreenSeconds) * 1000L, inCharge, menu, _dim.Active)) SetAttract(true);
+    }
+
+    /// <summary>Previews: the attract loop at a given moment.</summary>
+    public void PreviewAttract(double seconds, int pair) => _attract.ShowAt(seconds, pair);
+
+    private void SetAttract(bool on)
+    {
+        _attract.Set(on);
+        L.Sound?.SetAttract(on);
+        if (!on) UpdateAmbient();
     }
 
     private long _handOverUntil;
