@@ -1,10 +1,10 @@
-﻿<#
+<#
 .SYNOPSIS
   Package the published Lounge build into a Forge Setup executable.
 
 .DESCRIPTION
   Requires the sibling Forge project to have been built with `gobake build`,
-  producing ../Forge/build/forge.exe and ../Forge/build/uninstall.exe.
+  producing ../Forge/build/forge.exe and ../Forge/build/stub.exe.
 
 .EXAMPLE
   .\installer.ps1                 # build, verify, then package
@@ -31,7 +31,7 @@ $version = $versions.Target
 
 $forgeRoot   = Resolve-Path $ForgeDir
 $forgeGui    = Join-Path $forgeRoot 'build\forge.exe'
-$uninstaller = Join-Path $forgeRoot 'build\uninstall.exe'
+$uninstaller = Join-Path $forgeRoot 'build\stub.exe'
 $distApp     = Join-Path $PSScriptRoot 'dist\Lounge'
 $outDir      = Join-Path $PSScriptRoot 'dist\installer'
 $logDir      = Join-Path $outDir 'logs'
@@ -99,24 +99,13 @@ foreach ($icon in [regex]::Matches($manifest, '(?m)^\s*icon\s*=\s*"(\$\{INSTALLD
 }
 Write-Host "  payload ok: no symbols, shortcut icons resolve" -ForegroundColor DarkGray
 
-Write-Host "`n[3/4] Ensuring a GUI-subsystem forge.exe..." -ForegroundColor Cyan
-if (-not (Test-Path $forgeGui))    { throw "Missing $forgeGui. Run 'gobake build' in $forgeRoot first." }
-if (-not (Test-Path $uninstaller)) { throw "Missing $uninstaller. Run 'gobake build' in $forgeRoot first." }
-
-# Themes are go:embed-ed into forge.exe, so editing a theme and not rebuilding
-# Forge silently packages the previous one. Check the theme tree, not just the
-# Go sources.
-$forgeStamp = (Get-Item $forgeGui).LastWriteTime
-$newest = Get-ChildItem (Join-Path $forgeRoot 'themes'), (Join-Path $forgeRoot 'cmd'), (Join-Path $forgeRoot 'internal') `
-    -Recurse -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-if ($newest -and $newest.LastWriteTime -gt $forgeStamp) {
-    throw "forge.exe ($($forgeStamp.ToString('u'))) is older than $($newest.Name) ($($newest.LastWriteTime.ToString('u'))). Run 'gobake build' in $forgeRoot so the current themes are embedded."
+Write-Host "`n[3/4] Checking prebuilt Forge 2..." -ForegroundColor Cyan
+foreach ($relative in @('build/forge.exe', 'build/stub.exe', 'build/wizard/Forge.Wizard.exe', 'build/wizard/libSkiaSharp.dll', 'build/wizard/libHarfBuzzSharp.dll')) {
+    $required = Join-Path $forgeRoot $relative
+    if (-not (Test-Path -LiteralPath $required)) { throw "Missing $required. Run 'gobake build' in $forgeRoot first." }
 }
-
-Assert-GuiExecutable $forgeGui
-Assert-GuiExecutable $uninstaller
-Write-Host "  using: $forgeGui" -ForegroundColor DarkGray
-Write-Host "  theme: $($manifest -replace '(?s).*?theme\s*=\s*"([^"]+)".*', '$1')" -ForegroundColor DarkGray
+$forgeVersion = & $forgeGui --version
+if ($LASTEXITCODE -ne 0 -or $forgeVersion -notmatch '^forge v2\.') { throw 'Forge 2 is required. Rebuild the sibling Forge toolkit.' }
 
 Write-Host "`n[4/4] Building Setup.exe..." -ForegroundColor Cyan
 
