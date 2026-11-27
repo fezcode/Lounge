@@ -17,16 +17,14 @@ public sealed record SubStyle(string Font, double Scale, uint Color, uint Outlin
 /// keeps its own styling.</summary>
 public sealed unsafe class SubtitleEngine : IDisposable
 {
-    private sealed record BitmapSub(double Start, double End, int X, int Y, int W, int H, byte[] Bgra, int RefW, int RefH);
-
     private readonly object _gate = new();
     private IntPtr _lib, _renderer, _track;
-    private readonly List<BitmapSub> _bitmaps = new();
+    private readonly SubPictures _bitmaps = new();
     private bool _bitmapMode;
     private int _frameW, _frameH, _videoW = 1280, _videoH = 720;
     private byte[]? _overlay;
     private bool _hadContent, _overlayFresh;
-    private List<BitmapSub> _lastActive = [];
+    private List<SubPictures.Picture> _lastActive = [];
     private CancellationTokenSource? _preload;
     private SubStyle _style = new("sans-serif", 1, 0xFFFFFF, 0, 2, 0);
     private bool _plainText;
@@ -42,10 +40,9 @@ public sealed unsafe class SubtitleEngine : IDisposable
     private AVRational _liveTb;
     private bool _liveBitmap;
     private int _liveRefW, _liveRefH;
-    // Lines already given to libass (start, text without its ReadOrder) and bitmaps already
-    // kept (start, rectangle), so the live feed and the preload never show a line twice.
+    // Lines already given to libass (start, text without its ReadOrder), so the live feed and
+    // the preload never show a line twice. Bitmaps de-duplicate in SubPictures.
     private readonly HashSet<(long, string)> _seenText = new();
-    private readonly HashSet<(long, int, int, int, int)> _seenBitmaps = new();
     private int _readOrder;
 
     /// <summary>Files up to this size are also preloaded in full in the background. Larger
@@ -105,7 +102,6 @@ public sealed unsafe class SubtitleEngine : IDisposable
             _bitmapMode = false;
             _events.Clear();
             _seenText.Clear();
-            _seenBitmaps.Clear();
             _lastActive = [];
             ExternalName = null;
         }
@@ -156,10 +152,18 @@ public sealed unsafe class SubtitleEngine : IDisposable
         Interlocked.Increment(ref _generation);
     }
 
-    /// <summary>After a seek: drop the live decoder's state (PGS keeps half-built pictures).</summary>
+    /// <summary>After a seek: drop the live decoder's state (PGS keeps half-built pictures),
+    /// and any picture still waiting for the display set that ends it, which the new read
+    /// position will not deliver.</summary>
     public void FlushLive()
     {
-        lock (_liveGate) if (_liveCtx != null) ffmpeg.avcodec_flush_buffers(_liveCtx);
+        lock (_liveGate)
+        {
+            if (_liveCtx == null) return;
+            ffmpeg.avcodec_flush_buffers(_liveCtx);
+            if (_liveBitmap) lock (_gate) _bitmaps.Flush();
+        }
+        Interlocked.Increment(ref _generation);
     }
 
     /// <summary>Decodes one subtitle packet and adds what it holds to the track.</summary>
@@ -404,14 +408,13 @@ public sealed unsafe class SubtitleEngine : IDisposable
     {
         lock (_gate)
         {
-            // A PGS "clear" (no rects) ends whatever is on screen.
-            foreach (var open in _bitmaps.Where(b => double.IsInfinity(b.End) && b.Start < start).ToList())
-                _bitmaps[_bitmaps.IndexOf(open)] = open with { End = start };
+            // Every display set, a PGS "clear" (no rects) included, replaces what is on screen.
+            _bitmaps.BeginSet(start);
             for (int i = 0; i < sub->num_rects; i++)
             {
                 var r = sub->rects[i];
                 if (r->type != AVSubtitleType.SUBTITLE_BITMAP || r->w <= 0 || r->h <= 0) continue;
-                if (!_seenBitmaps.Add(((long)Math.Round(start * 1000), r->x, r->y, r->w, r->h))) continue;
+                if (_bitmaps.Has(start, r->x, r->y, r->w, r->h)) continue;
                 var px = new byte[r->w * r->h * 4];
                 var palette = (uint*)r->data[1];
                 for (int y = 0; y < r->h; y++)
@@ -426,8 +429,7 @@ public sealed unsafe class SubtitleEngine : IDisposable
                         px[o + 2] = (byte)(((argb >> 16) & 0xFF) * a / 255);
                         px[o + 3] = a;
                     }
-                var end = double.IsNaN(dur) || dur <= 0 ? double.PositiveInfinity : start + dur;
-                _bitmaps.Add(new BitmapSub(start, end, r->x, r->y, r->w, r->h, px, refW, refH));
+                _bitmaps.Add(start, dur, r->x, r->y, r->w, r->h, px, refW, refH);
             }
         }
     }
@@ -462,7 +464,7 @@ public sealed unsafe class SubtitleEngine : IDisposable
                 // Redraw only when the set of pictures on screen changes (or the overlay was
                 // just resized): clearing and re-blitting a full-screen overlay every frame
                 // cost a 4K screen dearly.
-                var active = _bitmaps.Where(b => b.Start <= now && now < b.End).ToList();
+                var active = _bitmaps.Active(now);
                 if (!_overlayFresh && active.SequenceEqual(_lastActive, ReferenceEqualityComparer.Instance))
                     return active.Count > 0 ? _overlay : null;
                 _overlayFresh = false;
@@ -525,7 +527,7 @@ public sealed unsafe class SubtitleEngine : IDisposable
         }
     }
 
-    private void BlitScaled(BitmapSub s, int width, int height)
+    private void BlitScaled(SubPictures.Picture s, int width, int height)
     {
         var sx = width / (double)s.RefW;
         var sy = height / (double)s.RefH;
